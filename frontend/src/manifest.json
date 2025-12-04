@@ -7,7 +7,7 @@
   "transformPx": false,
   "locale": "zh-Hans",
   "mp-weixin": {
-    "appid": "",
+    "appid": "wxfe0aac5cff85dda4",
     "setting": {
       "urlCheck": true,
       "es6": true,
@@ -15,19 +15,12 @@
       "minified": true
     },
     "usingComponents": true,
-    "lazyCodeLoading": "requiredComponents",
     "permission": {
       "scope.record": {
         "desc": "用于语音识别食材"
       }
     },
-    "requiredPrivateInfos": ["chooseAddress"],
-    "plugins": {
-      "WechatSI": {
-        "version": "0.3.6",
-        "provider": "wx069ba97219f66d99"
-      }
-    }
+    "requiredPrivateInfos": ["chooseAddress"]
   },
   "h5": {
     "title": "冰箱菜单 - AI智能菜谱推荐",

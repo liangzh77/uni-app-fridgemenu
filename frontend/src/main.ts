@@ -4,6 +4,7 @@
  */
 import { createSSRApp } from 'vue'
 import { createPinia } from 'pinia'
+import { createUnistorage } from 'pinia-plugin-unistorage'
 import App from './App.vue'
 
 export function createApp() {
@@ -12,12 +13,8 @@ export function createApp() {
   // 创建Pinia实例
   const pinia = createPinia()
 
-  // 添加持久化插件 (仅在支持的环境中)
-  // #ifdef MP-WEIXIN || APP-PLUS
-  import('pinia-plugin-unistorage').then(({ createUnistorage }) => {
-    pinia.use(createUnistorage())
-  }).catch(() => {})
-  // #endif
+  // 添加持久化插件
+  pinia.use(createUnistorage())
 
   app.use(pinia)
 

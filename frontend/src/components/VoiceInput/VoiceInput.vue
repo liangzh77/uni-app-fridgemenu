@@ -3,14 +3,14 @@
     <!-- 录音按钮 -->
     <view
       class="voice-button"
-      :class="{ recording: isRecording }"
+      :class="{ recording: isRecording || isStarting }"
       @touchstart="startRecording"
       @touchend="stopRecording"
       @touchcancel="cancelRecording"
     >
       <view class="voice-icon">
         <image
-          v-if="!isRecording"
+          v-if="!isRecording && !isStarting"
           src="/static/icons/mic.png"
           mode="aspectFit"
           class="icon-image"
@@ -20,7 +20,7 @@
         </view>
       </view>
       <text class="voice-text">
-        {{ isRecording ? '松开结束' : '按住说话' }}
+        {{ isRecording || isStarting ? '松开结束' : '按住说话' }}
       </text>
     </view>
 
@@ -63,6 +63,7 @@ const emit = defineEmits(['voiceResult', 'voiceStart', 'voiceEnd', 'voiceError']
 
 // 状态
 const isRecording = ref(false);
+const isStarting = ref(false); // 新增：正在启动录音
 const isProcessing = ref(false);
 const recordingTime = ref(0);
 const errorMessage = ref('');
@@ -85,6 +86,7 @@ onMounted(() => {
   // 录音开始
   recorderManager.value.onStart(() => {
     console.log('录音开始');
+    isStarting.value = false;
     isRecording.value = true;
     recordingTime.value = 0;
     errorMessage.value = '';
@@ -119,6 +121,7 @@ onMounted(() => {
   recorderManager.value.onError((err) => {
     console.error('录音错误:', err);
     clearInterval(timerInterval.value);
+    isStarting.value = false;
     isRecording.value = false;
     errorMessage.value = '录音失败，请检查麦克风权限';
     emit('voiceError', err);
@@ -135,13 +138,17 @@ onUnmounted(() => {
 
 // 开始录音
 const startRecording = (e) => {
+  console.log('startRecording 被调用');
   // #ifdef MP-WEIXIN
   startY.value = e.touches[0].clientY;
+  isStarting.value = true; // 标记正在启动录音
+  console.log('isStarting 设为 true');
 
   // 检查录音权限
   uni.authorize({
     scope: 'scope.record',
     success: () => {
+      console.log('录音权限已授权，开始录音');
       recorderManager.value.start({
         duration: props.maxDuration * 1000,
         sampleRate: 16000,
@@ -151,6 +158,8 @@ const startRecording = (e) => {
       });
     },
     fail: () => {
+      console.log('录音权限授权失败');
+      isStarting.value = false;
       errorMessage.value = '请授权录音权限';
       uni.showModal({
         title: '提示',
@@ -173,18 +182,32 @@ const startRecording = (e) => {
 
 // 停止录音
 const stopRecording = (e) => {
-  if (!isRecording.value) return;
+  console.log('stopRecording 被调用, isStarting:', isStarting.value, 'isRecording:', isRecording.value);
+
+  // 如果正在启动但还没真正开始，重置状态
+  if (isStarting.value && !isRecording.value) {
+    console.log('录音还没开始，重置 isStarting');
+    isStarting.value = false;
+    return;
+  }
+
+  if (!isRecording.value) {
+    console.log('不在录音状态，直接返回');
+    return;
+  }
 
   // #ifdef MP-WEIXIN
   // 检查是否上滑取消
   if (e && e.changedTouches && e.changedTouches[0]) {
     const endY = e.changedTouches[0].clientY;
     if (startY.value - endY > 50) {
+      console.log('上滑取消');
       cancelRecording();
       return;
     }
   }
 
+  console.log('调用 recorderManager.stop()');
   recorderManager.value.stop();
   // #endif
 };
@@ -207,38 +230,63 @@ const cancelRecording = () => {
   }, 2000);
 };
 
-// 调用微信语音识别
+// API 基础地址
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+
+// 上传音频到后端进行语音识别
 const recognizeVoice = async (filePath) => {
   isProcessing.value = true;
 
   // #ifdef MP-WEIXIN
   try {
-    // 使用微信同声传译插件进行语音识别
-    const plugin = requirePlugin('WechatSI');
+    console.log('上传音频文件进行识别:', filePath);
 
-    plugin.voiceToText({
-      filePath,
-      success: (res) => {
-        console.log('语音识别结果:', res);
-        isProcessing.value = false;
-
-        if (res.result && res.result.trim()) {
-          emit('voiceResult', res.result);
-        } else {
-          errorMessage.value = '未识别到内容，请重试';
+    // 使用 uni.uploadFile 上传音频到后端
+    const uploadResult = await new Promise((resolve, reject) => {
+      uni.uploadFile({
+        url: `${API_BASE_URL}/api/voice/recognize`,
+        filePath: filePath,
+        name: 'audio',
+        formData: {
+          // 可以传递用户信息
+        },
+        success: (res) => {
+          if (res.statusCode === 200) {
+            try {
+              const data = JSON.parse(res.data);
+              resolve(data);
+            } catch (e) {
+              reject(new Error('解析响应失败'));
+            }
+          } else {
+            reject(new Error(`请求失败: ${res.statusCode}`));
+          }
+        },
+        fail: (err) => {
+          reject(err);
         }
-      },
-      fail: (err) => {
-        console.error('语音识别失败:', err);
-        isProcessing.value = false;
-        errorMessage.value = '语音识别失败，请重试';
-        emit('voiceError', err);
-      }
+      });
     });
-  } catch (err) {
-    console.error('插件调用错误:', err);
+
+    console.log('语音识别结果:', uploadResult);
     isProcessing.value = false;
-    errorMessage.value = '语音识别服务不可用';
+
+    if (uploadResult.success && uploadResult.data) {
+      const { text, ingredients } = uploadResult.data;
+
+      if (text && text.trim()) {
+        // 返回识别的文本和解析的食材
+        emit('voiceResult', text, ingredients);
+      } else {
+        errorMessage.value = '未识别到内容，请重试';
+      }
+    } else {
+      errorMessage.value = uploadResult.message || '语音识别失败，请重试';
+    }
+  } catch (err) {
+    console.error('语音识别失败:', err);
+    isProcessing.value = false;
+    errorMessage.value = err.message || '语音识别失败，请重试';
     emit('voiceError', err);
   }
   // #endif
