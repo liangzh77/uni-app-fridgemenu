@@ -51,6 +51,10 @@ coverage/
 # uni-app specific
 .hbuilderx/
 
+# WeChat DevTools
+project.config.json
+project.private.config.json
+
 # Database
 *.sqlite
 *.sqlite3
