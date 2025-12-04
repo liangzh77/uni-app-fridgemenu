@@ -1,0 +1,47 @@
+{
+  "name": "冰箱菜单",
+  "appid": "__UNI__FRIDGEMENU",
+  "description": "AI智能菜谱推荐小程序 - 语音输入食材，智能推荐菜谱",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "locale": "zh-Hans",
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": true,
+      "es6": true,
+      "postcss": true,
+      "minified": true
+    },
+    "usingComponents": true,
+    "lazyCodeLoading": "requiredComponents",
+    "permission": {
+      "scope.record": {
+        "desc": "用于语音识别食材"
+      }
+    },
+    "requiredPrivateInfos": ["chooseAddress"],
+    "plugins": {}
+  },
+  "h5": {
+    "title": "冰箱菜单 - AI智能菜谱推荐",
+    "router": {
+      "mode": "hash",
+      "base": "./"
+    },
+    "optimization": {
+      "prefetch": true,
+      "preload": true
+    }
+  },
+  "app-plus": {
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>"
+        ]
+      }
+    }
+  }
+}
