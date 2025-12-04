@@ -59,8 +59,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import VoiceInput from '@/components/VoiceInput/VoiceInput.vue';
-import IngredientList from '@/components/IngredientList/IngredientList.vue';
+// 组件通过 easycom 自动导入，无需手动 import
 import { useUserStore } from '@/stores/user';
 import { useIngredientStore } from '@/stores/ingredient';
 

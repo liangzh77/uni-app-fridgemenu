@@ -22,7 +22,12 @@
       }
     },
     "requiredPrivateInfos": ["chooseAddress"],
-    "plugins": {}
+    "plugins": {
+      "WechatSI": {
+        "version": "0.3.6",
+        "provider": "wx069ba97219f66d99"
+      }
+    }
   },
   "h5": {
     "title": "冰箱菜单 - AI智能菜谱推荐",
