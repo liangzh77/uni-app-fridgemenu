@@ -500,7 +500,7 @@
 
 **目标**: 实现自动清理机制，控制图片库容量在10GB以内
 
-- [ ] **TASK-056** [P2] 实现图片清理服务
+- [x] **TASK-056** [P2] 实现图片清理服务
   - 计算当前图片库总容量 (SUM(image_size_kb))
   - 如果超过10GB:
     - 查询需清理的图片: last_used_at < 3个月前 AND usage_count < 10
@@ -509,13 +509,13 @@
   - 删除image_library记录和CDN文件
   - 文件: `backend/src/services/imageCleanupService.js`
 
-- [ ] **TASK-057** [P2] 实现图片清理定时任务
+- [x] **TASK-057** [P2] 实现图片清理定时任务
   - 使用node-cron每天凌晨2点执行
   - 调用imageCleanupService
   - 记录清理日志 (删除数量、释放空间)
   - 文件: `backend/src/jobs/imageCleanupJob.js`
 
-- [ ] **TASK-058** [P2] 实现容量监控API
+- [x] **TASK-058** [P2] 实现容量监控API
   - GET /api/v1/admin/image-library/stats
   - 返回: { total_images, total_size_gb, usage_rate }
   - 用于监控仪表盘

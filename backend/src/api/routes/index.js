@@ -12,6 +12,7 @@ const recipesRoutes = require('./recipes');
 const favoritesRoutes = require('./favorites');
 const voiceRoutes = require('./voice');
 const recommendRoutes = require('./recommend');
+const adminRoutes = require('./admin');
 
 // 注册路由
 router.use('/auth', authRoutes);
@@ -20,6 +21,7 @@ router.use('/recipes', recipesRoutes);
 router.use('/favorites', favoritesRoutes);
 router.use('/voice', voiceRoutes);
 router.use('/recommend', recommendRoutes);
+router.use('/admin', adminRoutes);
 
 // 健康检查端点
 router.get('/health', (req, res) => {

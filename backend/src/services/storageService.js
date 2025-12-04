@@ -205,6 +205,38 @@ async function deleteFromOss(objectKey) {
 }
 
 /**
+ * 从CDN URL中提取objectKey并删除
+ * @param {string} cdnUrl - CDN URL
+ */
+async function deleteFromCDN(cdnUrl) {
+  try {
+    if (!cdnUrl) return;
+
+    // 从URL中提取objectKey
+    let objectKey;
+
+    if (cdnConfig.domain && cdnUrl.includes(cdnConfig.domain)) {
+      // CDN URL格式: https://cdn.example.com/images/xxx.jpg
+      const urlObj = new URL(cdnUrl);
+      objectKey = urlObj.pathname.slice(1); // 移除开头的 /
+    } else if (cdnUrl.includes('.aliyuncs.com')) {
+      // OSS URL格式: https://bucket.oss-region.aliyuncs.com/images/xxx.jpg
+      const urlObj = new URL(cdnUrl);
+      objectKey = urlObj.pathname.slice(1);
+    } else {
+      // 假设是objectKey
+      objectKey = cdnUrl;
+    }
+
+    await deleteFromOss(objectKey);
+    logger.info(`从CDN删除图片成功: ${objectKey}`);
+  } catch (error) {
+    logger.error('从CDN删除图片失败:', error);
+    // 不抛出异常，允许继续执行
+  }
+}
+
+/**
  * 验证存储配置是否完整
  */
 function validateStorageConfig() {
@@ -227,5 +259,6 @@ module.exports = {
   transferToCdn,
   generateTempUrl,
   deleteFromOss,
+  deleteFromCDN,
   validateStorageConfig
 };
