@@ -27,7 +27,7 @@
       </text>
     </view>
 
-    <!-- 录音状态提示 -->
+    <!-- 录音状态提示 - 显示在按钮右边 -->
     <view v-if="isRecording" class="recording-status">
       <view class="timer">{{ formatTime(recordingTime) }}</view>
       <!-- H5 音量指示器 -->
@@ -35,15 +35,14 @@
       <view class="volume-indicator">
         <view class="volume-bar" :style="{ width: volumeLevel + '%' }"></view>
       </view>
-      <view class="volume-text">音量: {{ volumeLevel }}%</view>
       <!-- #endif -->
-      <view class="tip">上滑取消录音</view>
+      <view class="tip">↑ 上滑取消</view>
     </view>
 
     <!-- 识别状态提示 -->
     <view v-if="isProcessing" class="processing-status">
       <view class="loading-spinner"></view>
-      <text>正在识别...</text>
+      <text>识别中...</text>
     </view>
 
     <!-- 错误提示 -->
@@ -592,9 +591,11 @@ const recognizeVoice = async (filePath) => {
 <style lang="scss" scoped>
 .voice-input-container {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  padding: 32rpx;
+  justify-content: center;
+  position: relative;
+  width: 100%;
 }
 
 .voice-button {
@@ -663,51 +664,48 @@ const recognizeVoice = async (filePath) => {
 }
 
 .recording-status {
-  margin-top: 32rpx;
-  text-align: center;
+  position: absolute;
+  right: 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8rpx;
 
   .timer {
-    font-size: 48rpx;
+    font-size: 36rpx;
     font-weight: bold;
     color: #f44336;
   }
 
   .volume-indicator {
-    width: 200rpx;
-    height: 16rpx;
+    width: 120rpx;
+    height: 12rpx;
     background: #eee;
-    border-radius: 8rpx;
-    margin: 16rpx auto;
+    border-radius: 6rpx;
     overflow: hidden;
   }
 
   .volume-bar {
     height: 100%;
-    background: linear-gradient(90deg, #4CAF50, #8BC34A, #FFEB3B, #FF9800, #f44336);
-    border-radius: 8rpx;
+    background: linear-gradient(90deg, #4CAF50, #FFEB3B, #f44336);
+    border-radius: 6rpx;
     transition: width 0.1s ease;
   }
 
-  .volume-text {
-    font-size: 24rpx;
-    color: #666;
-    margin-bottom: 8rpx;
-  }
-
   .tip {
-    font-size: 24rpx;
+    font-size: 22rpx;
     color: #999;
-    margin-top: 8rpx;
   }
 }
 
 .processing-status {
+  position: absolute;
+  right: 32rpx;
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  margin-top: 32rpx;
+  gap: 12rpx;
   color: #666;
-  font-size: 28rpx;
+  font-size: 26rpx;
 }
 
 .loading-spinner {
@@ -726,11 +724,15 @@ const recognizeVoice = async (filePath) => {
 }
 
 .error-message {
-  margin-top: 24rpx;
-  padding: 16rpx 24rpx;
+  position: absolute;
+  top: -180rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12rpx 24rpx;
   background: #fff3f3;
   border-radius: 8rpx;
   color: #f44336;
-  font-size: 26rpx;
+  font-size: 24rpx;
+  white-space: nowrap;
 }
 </style>

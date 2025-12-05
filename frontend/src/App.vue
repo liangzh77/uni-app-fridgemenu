@@ -64,6 +64,13 @@ page {
   background-color: #f8f8f8;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
+  height: 100%;
+  overflow: hidden;
+}
+
+html, body, #app {
+  height: 100%;
+  overflow: hidden;
 }
 
 /* 主题色变量 */
@@ -90,5 +97,28 @@ page {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* H5 tabBar 样式优化 */
+.uni-tabbar {
+  height: 70px !important;
+}
+
+.uni-tabbar .uni-tabbar__item {
+  height: 70px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.uni-tabbar .uni-tabbar__label {
+  font-size: 18px !important;
+  margin-top: 4px !important;
+}
+
+.uni-tabbar .uni-tabbar__icon {
+  width: 30px !important;
+  height: 30px !important;
 }
 </style>

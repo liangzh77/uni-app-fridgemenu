@@ -1,6 +1,6 @@
 <template>
   <view class="page-container">
-    <!-- 食材列表 - 填充顶部剩余空间 -->
+    <!-- 食材区域 - 顶部 -->
     <view class="ingredient-section">
       <IngredientList
         :ingredients="ingredientStore.ingredients"
@@ -8,41 +8,40 @@
       />
     </view>
 
-    <!-- 底部固定区域 -->
-    <view class="bottom-input-section">
-      <!-- 清空按钮 -->
-      <view v-if="ingredientStore.hasIngredients" class="clear-row">
-        <view class="clear-btn" @click="handleClearIngredients">清空</view>
-      </view>
-      <!-- 语音输入 -->
-      <view class="voice-row">
-        <VoiceInput
-          @voiceResult="handleVoiceResult"
-          @voiceStart="handleVoiceStart"
-          @voiceEnd="handleVoiceEnd"
-          @voiceError="handleVoiceError"
-        />
-      </view>
-      <!-- 手动输入 -->
-      <view class="manual-row">
-        <input
-          v-model="manualIngredient"
-          type="text"
-          placeholder="手动输入食材名称"
-          class="manual-input"
-          :maxlength="20"
-          @confirm="handleManualInputAdd"
-        />
-        <view
-          class="manual-add-btn"
-          :class="{ disabled: !manualIngredient.trim() }"
-          @click="handleManualInputAdd"
-        >
-          添加
-        </view>
-      </view>
+    <!-- 清空和食谱按钮 -->
+    <view v-if="ingredientStore.hasIngredients" class="action-row">
+      <view class="clear-btn" @click="handleClearIngredients">清空</view>
+      <view class="recipe-btn" @click="handleGoRecipe">食谱</view>
     </view>
 
+    <!-- 语音输入 -->
+    <view class="voice-row">
+      <VoiceInput
+        @voiceResult="handleVoiceResult"
+        @voiceStart="handleVoiceStart"
+        @voiceEnd="handleVoiceEnd"
+        @voiceError="handleVoiceError"
+      />
+    </view>
+
+    <!-- 手动输入 -->
+    <view class="manual-row">
+      <input
+        v-model="manualIngredient"
+        type="text"
+        placeholder="手动输入食材名称"
+        class="manual-input"
+        :maxlength="20"
+        @confirm="handleManualInputAdd"
+      />
+      <view
+        class="manual-add-btn"
+        :class="{ disabled: !manualIngredient.trim() }"
+        @click="handleManualInputAdd"
+      >
+        添加
+      </view>
+    </view>
   </view>
 </template>
 
@@ -189,38 +188,43 @@ const handleClearIngredients = async () => {
     });
   }
 };
+
+// 跳转到食谱推荐页
+const handleGoRecipe = () => {
+  uni.switchTab({
+    url: '/pages/recipe/recommend'
+  });
+};
 </script>
 
 <style lang="scss" scoped>
 .page-container {
-  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  // H5端: 100vh - 导航栏(44px)
+  // 使用padding-bottom确保内容不被tabBar(70px)遮挡
+  height: calc(100vh - 44px);
+  padding-bottom: 80px;
+  box-sizing: border-box;
   background: linear-gradient(180deg, #f0f9f0 0%, #ffffff 30%);
+  overflow: hidden;
 }
 
-// 食材区域 - 固定在顶部到清空按钮上方
+// 食材区域 - 占据剩余空间
 .ingredient-section {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 530rpx; // 清空+语音+手动输入+tabBar的高度
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  min-height: 0;
 }
 
-// 底部固定输入区域
-.bottom-input-section {
-  position: fixed;
-  bottom: 100rpx; // tabBar 高度
-  left: 0;
-  right: 0;
-}
-
-// 清空按钮行
-.clear-row {
+// 操作按钮行
+.action-row {
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
+  gap: 32rpx;
   padding: 16rpx 32rpx;
 }
 
@@ -236,8 +240,22 @@ const handleClearIngredients = async () => {
   }
 }
 
-// 语音输入行 - 无背景
+.recipe-btn {
+  padding: 12rpx 48rpx;
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  border-radius: 32rpx;
+  color: white;
+  font-size: 28rpx;
+  font-weight: 500;
+
+  &:active {
+    opacity: 0.8;
+  }
+}
+
+// 语音输入行
 .voice-row {
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   padding: 16rpx 32rpx;
@@ -245,6 +263,7 @@ const handleClearIngredients = async () => {
 
 // 手动输入行
 .manual-row {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   padding: 16rpx 32rpx;

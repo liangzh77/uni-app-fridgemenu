@@ -5,10 +5,12 @@
       <view
         v-for="(item, index) in ingredients"
         :key="item.id || index"
-        class="ingredient-item"
+        class="ingredient-row"
         @longpress="handleLongPress(item, index)"
       >
-        <text class="item-name">{{ item.name }}</text>
+        <view class="ingredient-item">
+          <text class="item-name">{{ item.name }}</text>
+        </view>
         <view class="delete-btn" @click.stop="handleDelete(item, index)">
           <text class="delete-icon">×</text>
         </view>
@@ -113,13 +115,22 @@ const cancelDelete = () => {
   min-height: 0;
 }
 
+.ingredient-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+}
+
 .ingredient-item {
   display: flex;
   align-items: center;
   background: rgba(76, 175, 80, 0.15);
   border: 2rpx solid rgba(76, 175, 80, 0.3);
   border-radius: 48rpx;
-  padding: 20rpx 24rpx 20rpx 36rpx;
+  padding: 20rpx 36rpx;
   transition: all 0.2s ease;
 
   &:active {
@@ -139,18 +150,17 @@ const cancelDelete = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: 16rpx;
   border-radius: 50%;
-  background: rgba(76, 175, 80, 0.2);
+  background: rgba(200, 200, 200, 0.5);
 
   &:active {
-    background: rgba(76, 175, 80, 0.4);
+    background: rgba(200, 200, 200, 0.8);
   }
 }
 
 .delete-icon {
-  font-size: 32rpx;
-  color: #2e7d32;
+  font-size: 36rpx;
+  color: #666;
   line-height: 1;
 }
 
