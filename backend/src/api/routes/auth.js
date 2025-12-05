@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { code2Session } = require('../../config/wechat');
+const { code2Session, validateConfig } = require('../../config/wechat');
 const logger = require('../../config/logger');
 
 // 内存存储用户数据（开发环境）
@@ -26,23 +26,26 @@ router.post('/wechat-login', async (req, res, next) => {
       });
     }
 
-    // 调用微信接口获取openid和session_key
-    const wxSession = await code2Session(code);
-
-    // 生成自定义登录态（sessionId）
+    let userId;
     const sessionId = crypto.randomUUID();
 
-    // TODO: 可以将sessionId与openid的映射存储到Redis
-    // 这里简化处理，直接返回
-
-    logger.info(`微信登录成功: openid=${wxSession.openid.substring(0, 8)}...`);
+    // 检查微信配置是否完整
+    if (validateConfig()) {
+      // 调用微信接口获取openid和session_key
+      const wxSession = await code2Session(code);
+      userId = wxSession.openid;
+      logger.info(`微信登录成功: openid=${wxSession.openid.substring(0, 8)}...`);
+    } else {
+      // 微信配置缺失，使用开发模式：生成本地用户ID
+      userId = `wx_dev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      logger.warn(`微信配置缺失，使用开发模式登录: ${userId}`);
+    }
 
     res.json({
       success: true,
       data: {
-        userId: wxSession.openid,
+        userId,
         sessionId,
-        // 不返回session_key给前端（安全考虑）
       },
       message: '登录成功'
     });

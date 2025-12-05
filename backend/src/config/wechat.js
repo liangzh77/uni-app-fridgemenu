@@ -78,14 +78,22 @@ async function getAccessToken() {
 }
 
 /**
- * 验证配置是否完整
+ * 验证配置是否完整且有效
  */
 function validateConfig() {
   const required = ['WECHAT_APPID', 'WECHAT_SECRET'];
-  const missing = required.filter(key => !process.env[key]);
+  const placeholders = ['your_', 'YOUR_', 'xxx', 'placeholder'];
 
-  if (missing.length > 0) {
-    logger.warn(`微信配置缺失: ${missing.join(', ')}`);
+  // 检查配置是否存在且不是占位符
+  const invalid = required.filter(key => {
+    const value = process.env[key];
+    if (!value) return true;
+    // 检查是否为占位符值
+    return placeholders.some(p => value.toLowerCase().includes(p.toLowerCase()));
+  });
+
+  if (invalid.length > 0) {
+    logger.warn(`微信配置无效或缺失: ${invalid.join(', ')}`);
     return false;
   }
   return true;
