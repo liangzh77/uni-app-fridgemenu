@@ -10,6 +10,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 export const useRecipeStore = defineStore('recipe', () => {
   // 状态
   const recommendations = ref([]);
+  const historyRecipes = ref([]); // 所有发现过的菜谱历史
   const currentRecipe = ref(null);
   const loading = ref(false);
   const error = ref(null);
@@ -18,6 +19,7 @@ export const useRecipeStore = defineStore('recipe', () => {
 
   // 计算属性
   const hasRecommendations = computed(() => recommendations.value.length > 0);
+  const hasHistory = computed(() => historyRecipes.value.length > 0);
 
   // 获取用户信息
   const getUserInfo = () => {
@@ -58,6 +60,8 @@ export const useRecipeStore = defineStore('recipe', () => {
           ...excludedIds.value,
           ...response.data.data.map(r => r.id)
         ])];
+        // 添加到历史记录（去重）
+        addToHistory(response.data.data);
         return { success: true, data: response.data.data };
       } else {
         error.value = response.data.message;
@@ -102,6 +106,8 @@ export const useRecipeStore = defineStore('recipe', () => {
           ...excludedIds.value,
           ...response.data.data.map(r => r.id)
         ])];
+        // 添加到历史记录（去重）
+        addToHistory(response.data.data);
         return { success: true, data: response.data.data };
       } else {
         error.value = response.data.message;
@@ -193,6 +199,15 @@ export const useRecipeStore = defineStore('recipe', () => {
     }
   };
 
+  // 添加到历史记录（去重，新的在前面）
+  const addToHistory = (recipes) => {
+    const existingIds = new Set(historyRecipes.value.map(r => r.id));
+    const newRecipes = recipes.filter(r => !existingIds.has(r.id));
+    if (newRecipes.length > 0) {
+      historyRecipes.value = [...newRecipes, ...historyRecipes.value];
+    }
+  };
+
   // 清空推荐
   const clearRecommendations = () => {
     recommendations.value = [];
@@ -217,10 +232,12 @@ export const useRecipeStore = defineStore('recipe', () => {
 
   return {
     recommendations,
+    historyRecipes,
     currentRecipe,
     loading,
     error,
     hasRecommendations,
+    hasHistory,
     excludedIds,
     needRefresh,
     getRecommendations,

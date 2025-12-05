@@ -8,6 +8,13 @@
       }
     },
     {
+      "path": "pages/recipe/index",
+      "style": {
+        "navigationBarTitleText": "菜谱",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
       "path": "pages/recipe/recommend",
       "style": {
         "navigationBarTitleText": "推荐菜谱",
@@ -65,7 +72,7 @@
         "selectedIconPath": "static/images/tab-home-active.png"
       },
       {
-        "pagePath": "pages/recipe/recommend",
+        "pagePath": "pages/recipe/index",
         "text": "菜谱",
         "iconPath": "static/images/tab-recipe.png",
         "selectedIconPath": "static/images/tab-recipe-active.png"
