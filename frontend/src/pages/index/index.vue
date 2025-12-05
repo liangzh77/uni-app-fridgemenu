@@ -1,64 +1,53 @@
 <template>
   <view class="page-container">
-    <!-- 顶部标题 -->
-    <view class="page-header">
-      <text class="title">AI智能菜谱推荐</text>
-      <text class="subtitle">说出你有的食材，智能推荐美味菜谱</text>
-    </view>
-
-    <!-- 语音输入区域 -->
-    <view class="voice-section">
-      <VoiceInput
-        @voiceResult="handleVoiceResult"
-        @voiceStart="handleVoiceStart"
-        @voiceEnd="handleVoiceEnd"
-        @voiceError="handleVoiceError"
+    <!-- 食材列表 - 填充顶部剩余空间 -->
+    <view class="ingredient-section">
+      <IngredientList
+        :ingredients="ingredientStore.ingredients"
+        @delete="handleDeleteIngredient"
       />
     </view>
 
-    <!-- 食材列表 -->
-    <IngredientList
-      :ingredients="ingredientStore.ingredients"
-      @delete="handleDeleteIngredient"
-      @add="handleAddIngredient"
-      @clear="handleClearIngredients"
-    />
-
-    <!-- 推荐按钮 -->
-    <view class="action-section">
-      <button
-        class="recommend-btn"
-        :class="{ disabled: !canRecommend }"
-        :disabled="!canRecommend || isRecommending"
-        @click="handleRecommend"
-      >
-        <text v-if="isRecommending" class="loading-text">推荐中...</text>
-        <text v-else>
-          {{ ingredientStore.hasIngredients ? '开始推荐菜谱' : '请先添加食材' }}
-        </text>
-      </button>
-    </view>
-
-    <!-- 使用提示 -->
-    <view class="tips-section">
-      <view class="tip-item">
-        <text class="tip-icon">🎤</text>
-        <text class="tip-text">长按语音按钮说出食材</text>
+    <!-- 底部固定区域 -->
+    <view class="bottom-input-section">
+      <!-- 清空按钮 -->
+      <view v-if="ingredientStore.hasIngredients" class="clear-row">
+        <view class="clear-btn" @click="handleClearIngredients">清空</view>
       </view>
-      <view class="tip-item">
-        <text class="tip-icon">✏️</text>
-        <text class="tip-text">也可以手动输入食材名称</text>
+      <!-- 语音输入 -->
+      <view class="voice-row">
+        <VoiceInput
+          @voiceResult="handleVoiceResult"
+          @voiceStart="handleVoiceStart"
+          @voiceEnd="handleVoiceEnd"
+          @voiceError="handleVoiceError"
+        />
       </view>
-      <view class="tip-item">
-        <text class="tip-icon">🍳</text>
-        <text class="tip-text">添加完成后点击推荐按钮</text>
+      <!-- 手动输入 -->
+      <view class="manual-row">
+        <input
+          v-model="manualIngredient"
+          type="text"
+          placeholder="手动输入食材名称"
+          class="manual-input"
+          :maxlength="20"
+          @confirm="handleManualInputAdd"
+        />
+        <view
+          class="manual-add-btn"
+          :class="{ disabled: !manualIngredient.trim() }"
+          @click="handleManualInputAdd"
+        >
+          添加
+        </view>
       </view>
     </view>
+
   </view>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 // 组件通过 easycom 自动导入，无需手动 import
 import { useUserStore } from '@/stores/user';
 import { useIngredientStore } from '@/stores/ingredient';
@@ -68,13 +57,7 @@ const userStore = useUserStore();
 const ingredientStore = useIngredientStore();
 
 // 状态
-const isRecommending = ref(false);
-const lastClickTime = ref(0);
-
-// 计算属性
-const canRecommend = computed(() => {
-  return ingredientStore.hasIngredients && !isRecommending.value;
-});
+const manualIngredient = ref('');
 
 // 初始化
 onMounted(async () => {
@@ -170,14 +153,24 @@ const handleDeleteIngredient = async ({ item, index }) => {
   }
 };
 
-// 手动添加食材
-const handleAddIngredient = async ({ name }) => {
+// 手动输入添加食材
+const handleManualInputAdd = async () => {
+  const name = manualIngredient.value.trim();
+  if (!name) {
+    uni.showToast({
+      title: '请输入食材名称',
+      icon: 'none'
+    });
+    return;
+  }
+
   const result = await ingredientStore.addIngredients([name]);
   if (result.success && result.created > 0) {
     uni.showToast({
       title: '添加成功',
       icon: 'success'
     });
+    manualIngredient.value = '';
   } else if (result.skipped > 0) {
     uni.showToast({
       title: '该食材已存在',
@@ -196,143 +189,95 @@ const handleClearIngredients = async () => {
     });
   }
 };
-
-// 开始推荐（带防抖）
-const handleRecommend = () => {
-  // 防抖处理 (TASK-028.1)
-  const now = Date.now();
-  if (now - lastClickTime.value < 1000) {
-    return;
-  }
-  lastClickTime.value = now;
-
-  if (!canRecommend.value) {
-    uni.showToast({
-      title: '请先添加食材',
-      icon: 'none'
-    });
-    return;
-  }
-
-  isRecommending.value = true;
-
-  // 跳转到推荐页面
-  uni.navigateTo({
-    url: '/pages/recipe/recommend',
-    success: () => {
-      isRecommending.value = false;
-    },
-    fail: (err) => {
-      console.error('跳转失败:', err);
-      isRecommending.value = false;
-      uni.showToast({
-        title: '跳转失败',
-        icon: 'none'
-      });
-    }
-  });
-};
 </script>
 
 <style lang="scss" scoped>
 .page-container {
-  min-height: 100vh;
+  height: 100vh;
   background: linear-gradient(180deg, #f0f9f0 0%, #ffffff 30%);
-  padding-bottom: 120rpx;
 }
 
-.page-header {
-  padding: 48rpx 32rpx 32rpx;
-  text-align: center;
-
-  .title {
-    display: block;
-    font-size: 40rpx;
-    font-weight: bold;
-    color: #333;
-  }
-
-  .subtitle {
-    display: block;
-    font-size: 26rpx;
-    color: #999;
-    margin-top: 12rpx;
-  }
+// 食材区域 - 固定在顶部到清空按钮上方
+.ingredient-section {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 530rpx; // 清空+语音+手动输入+tabBar的高度
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
-.voice-section {
-  padding: 32rpx;
+// 底部固定输入区域
+.bottom-input-section {
+  position: fixed;
+  bottom: 100rpx; // tabBar 高度
+  left: 0;
+  right: 0;
+}
+
+// 清空按钮行
+.clear-row {
   display: flex;
   justify-content: center;
+  padding: 16rpx 32rpx;
 }
 
-.action-section {
-  padding: 32rpx;
+.clear-btn {
+  padding: 12rpx 48rpx;
+  background: #ffebee;
+  border-radius: 32rpx;
+  color: #f44336;
+  font-size: 28rpx;
+
+  &:active {
+    background: #ffcdd2;
+  }
 }
 
-.recommend-btn {
-  width: 100%;
-  height: 96rpx;
-  line-height: 96rpx;
+// 语音输入行 - 无背景
+.voice-row {
+  display: flex;
+  justify-content: center;
+  padding: 16rpx 32rpx;
+}
+
+// 手动输入行
+.manual-row {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 32rpx;
+  gap: 16rpx;
+  background: white;
+}
+
+.manual-input {
+  flex: 1;
+  height: 72rpx;
+  padding: 0 24rpx;
+  background: #f5f7fa;
+  border-radius: 36rpx;
+  font-size: 28rpx;
+}
+
+.manual-add-btn {
+  padding: 0 32rpx;
+  height: 72rpx;
+  line-height: 72rpx;
   background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
   color: white;
-  font-size: 32rpx;
-  font-weight: 600;
-  border-radius: 48rpx;
-  border: none;
-  box-shadow: 0 8rpx 24rpx rgba(76, 175, 80, 0.3);
+  border-radius: 36rpx;
+  font-size: 28rpx;
+  font-weight: 500;
 
   &.disabled {
     background: #ccc;
-    box-shadow: none;
+    color: #999;
   }
 
   &:active:not(.disabled) {
-    opacity: 0.9;
-    transform: scale(0.98);
-  }
-}
-
-.loading-text {
-  display: inline-flex;
-  align-items: center;
-
-  &::before {
-    content: '';
-    width: 32rpx;
-    height: 32rpx;
-    border: 4rpx solid white;
-    border-top-color: transparent;
-    border-radius: 50%;
-    margin-right: 16rpx;
-    animation: spin 1s linear infinite;
-  }
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.tips-section {
-  padding: 32rpx;
-  margin-top: 24rpx;
-}
-
-.tip-item {
-  display: flex;
-  align-items: center;
-  padding: 16rpx 0;
-  color: #666;
-
-  .tip-icon {
-    font-size: 32rpx;
-    margin-right: 16rpx;
-  }
-
-  .tip-text {
-    font-size: 26rpx;
+    opacity: 0.8;
   }
 }
 </style>

@@ -105,14 +105,13 @@ export const useIngredientStore = defineStore('ingredient', () => {
 
   // 删除食材
   const deleteIngredient = async (ingredientId) => {
-    const { userId } = getUserInfo();
+    const { userId, sessionId } = getUserInfo();
     if (!userId) return false;
 
     try {
       const response = await uni.request({
-        url: `${API_BASE_URL}/api/ingredients/${ingredientId}`,
-        method: 'DELETE',
-        data: { userId }
+        url: `${API_BASE_URL}/api/ingredients/${ingredientId}?userId=${encodeURIComponent(userId)}&sessionId=${encodeURIComponent(sessionId || '')}`,
+        method: 'DELETE'
       });
 
       if (response.data.success) {
@@ -137,9 +136,8 @@ export const useIngredientStore = defineStore('ingredient', () => {
 
     try {
       const response = await uni.request({
-        url: `${API_BASE_URL}/api/ingredients`,
-        method: 'DELETE',
-        data: { userId, sessionId }
+        url: `${API_BASE_URL}/api/ingredients?userId=${encodeURIComponent(userId)}&sessionId=${encodeURIComponent(sessionId)}`,
+        method: 'DELETE'
       });
 
       if (response.data.success) {
