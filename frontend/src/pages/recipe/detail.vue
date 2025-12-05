@@ -107,6 +107,8 @@ import { ref, computed, onMounted } from 'vue';
 import { useRecipeStore } from '@/stores/recipe';
 import { useUserStore } from '@/stores/user';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+
 // Stores
 const recipeStore = useRecipeStore();
 const userStore = useUserStore();
@@ -178,7 +180,7 @@ const toggleFavorite = async () => {
 
   try {
     const response = await uni.request({
-      url: `${import.meta.env.VITE_API_BASE_URL}/api/favorites/toggle`,
+      url: `${API_BASE_URL}/api/favorites/toggle`,
       method: 'POST',
       data: {
         userId: userStore.userId,

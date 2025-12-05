@@ -6,18 +6,12 @@ const express = require('express');
 const router = express.Router();
 const { Ingredient, FoodSynonymMapping } = require('../../models');
 const logger = require('../../config/logger');
-
-// 内存存储（用于开发模式，当数据库不可用时）
-const memoryStore = new Map();
-let mockIdCounter = 1;
+const { ingredientStore, getStoreKey, getNextMockId } = require('../../utils/memoryStore');
 
 // 检查是否使用模拟模式
 const useMockMode = () => {
   return process.env.MOCK_MODE === 'true' || !Ingredient;
 };
-
-// 获取会话的存储键
-const getStoreKey = (userId, sessionId) => `${userId}:${sessionId}`;
 
 /**
  * GET /api/ingredients
@@ -41,7 +35,7 @@ router.get('/', async (req, res, next) => {
       // 数据库不可用，使用内存存储
       logger.warn('数据库不可用，使用内存存储模式');
       const key = getStoreKey(userId, sessionId);
-      ingredients = memoryStore.get(key) || [];
+      ingredients = ingredientStore.get(key) || [];
     }
 
     res.json({
@@ -96,7 +90,7 @@ router.post('/', async (req, res, next) => {
       // 数据库不可用，使用内存存储
       logger.warn('数据库不可用，使用内存存储模式');
       const key = getStoreKey(userId, sessionId);
-      const existing = memoryStore.get(key) || [];
+      const existing = ingredientStore.get(key) || [];
       const existingNames = new Set(existing.map(i => i.name.toLowerCase()));
 
       const created = [];
@@ -108,7 +102,7 @@ router.post('/', async (req, res, next) => {
           skipped.push({ name });
         } else {
           const newItem = {
-            id: mockIdCounter++,
+            id: getNextMockId(),
             name,
             originalName: name,
             category: typeof item === 'object' ? item.category : null,
@@ -122,7 +116,7 @@ router.post('/', async (req, res, next) => {
         }
       }
 
-      memoryStore.set(key, existing);
+      ingredientStore.set(key, existing);
       result = { created, skipped };
     }
 
@@ -164,11 +158,11 @@ router.delete('/:id', async (req, res, next) => {
       // 数据库不可用，使用内存存储
       logger.warn('数据库不可用，使用内存存储模式');
       const key = getStoreKey(userId, sessionId || 'default');
-      const existing = memoryStore.get(key) || [];
+      const existing = ingredientStore.get(key) || [];
       const index = existing.findIndex(i => i.id === parseInt(id));
       if (index !== -1) {
         existing.splice(index, 1);
-        memoryStore.set(key, existing);
+        ingredientStore.set(key, existing);
         deleted = 1;
       } else {
         deleted = 0;
@@ -213,9 +207,9 @@ router.delete('/', async (req, res, next) => {
       // 数据库不可用，使用内存存储
       logger.warn('数据库不可用，使用内存存储模式');
       const key = getStoreKey(userId, sessionId);
-      const existing = memoryStore.get(key) || [];
+      const existing = ingredientStore.get(key) || [];
       deleted = existing.length;
-      memoryStore.set(key, []);
+      ingredientStore.set(key, []);
     }
 
     res.json({
@@ -249,7 +243,7 @@ router.get('/names', async (req, res, next) => {
       // 数据库不可用，使用内存存储
       logger.warn('数据库不可用，使用内存存储模式');
       const key = getStoreKey(userId, sessionId);
-      const existing = memoryStore.get(key) || [];
+      const existing = ingredientStore.get(key) || [];
       names = existing.map(i => i.name);
     }
 

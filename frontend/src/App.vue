@@ -99,26 +99,27 @@ html, body, #app {
   white-space: nowrap;
 }
 
-/* H5 tabBar 样式优化 */
+/* H5 tabBar 样式优化 - 简洁纯文字样式 */
 .uni-tabbar {
-  height: 70px !important;
+  height: 60px !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
 }
 
 .uni-tabbar .uni-tabbar__item {
-  height: 70px !important;
+  height: 60px !important;
   display: flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
   align-items: center !important;
+  justify-content: center !important;
+}
+
+/* 隐藏图标 */
+.uni-tabbar .uni-tabbar__icon {
+  display: none !important;
 }
 
 .uni-tabbar .uni-tabbar__label {
   font-size: 18px !important;
-  margin-top: 4px !important;
-}
-
-.uni-tabbar .uni-tabbar__icon {
-  width: 30px !important;
-  height: 30px !important;
+  margin: 0 !important;
+  line-height: 60px !important;
 }
 </style>

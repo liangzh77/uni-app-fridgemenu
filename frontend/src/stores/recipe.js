@@ -14,6 +14,7 @@ export const useRecipeStore = defineStore('recipe', () => {
   const loading = ref(false);
   const error = ref(null);
   const excludedIds = ref([]); // 已排除的菜谱ID（用于换一批）
+  const needRefresh = ref(false); // 标记是否需要强制刷新（从首页"发现"按钮进入时）
 
   // 计算属性
   const hasRecommendations = computed(() => recommendations.value.length > 0);
@@ -117,6 +118,14 @@ export const useRecipeStore = defineStore('recipe', () => {
 
   // 获取菜谱详情
   const getRecipeDetail = async (recipeId) => {
+    // 先从本地推荐列表查找（Mock模式或离线场景）
+    const localRecipe = recommendations.value.find(r => String(r.id) === String(recipeId));
+    if (localRecipe) {
+      currentRecipe.value = localRecipe;
+      return { success: true, data: localRecipe };
+    }
+
+    // 本地没有，尝试从 API 获取
     const { userId } = getUserInfo();
 
     try {
@@ -191,6 +200,21 @@ export const useRecipeStore = defineStore('recipe', () => {
     currentRecipe.value = null;
   };
 
+  // 标记需要刷新（从首页"发现"按钮触发）
+  const markNeedRefresh = () => {
+    needRefresh.value = true;
+    // 清空之前的推荐，强制重新生成
+    recommendations.value = [];
+    excludedIds.value = [];
+  };
+
+  // 消费刷新标记
+  const consumeNeedRefresh = () => {
+    const need = needRefresh.value;
+    needRefresh.value = false;
+    return need;
+  };
+
   return {
     recommendations,
     currentRecipe,
@@ -198,12 +222,15 @@ export const useRecipeStore = defineStore('recipe', () => {
     error,
     hasRecommendations,
     excludedIds,
+    needRefresh,
     getRecommendations,
     refreshRecommendations,
     getRecipeDetail,
     checkImageStatus,
     batchCheckImageStatus,
     updateImageUrl,
-    clearRecommendations
+    clearRecommendations,
+    markNeedRefresh,
+    consumeNeedRefresh
   };
 });

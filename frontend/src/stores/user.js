@@ -4,16 +4,23 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+
 export const useUserStore = defineStore('user', () => {
   // 状态
   const userId = ref(uni.getStorageSync('userId') || '');
   const sessionId = ref(uni.getStorageSync('sessionId') || '');
+  const userInfo = ref(uni.getStorageSync('userInfo') || null);
   const isLoggedIn = computed(() => !!userId.value);
 
   // 设置用户信息
   const setUser = (user) => {
     userId.value = user.userId;
     sessionId.value = user.sessionId;
+    if (user.userInfo) {
+      userInfo.value = user.userInfo;
+      uni.setStorageSync('userInfo', user.userInfo);
+    }
     uni.setStorageSync('userId', user.userId);
     uni.setStorageSync('sessionId', user.sessionId);
   };
@@ -22,8 +29,10 @@ export const useUserStore = defineStore('user', () => {
   const clearUser = () => {
     userId.value = '';
     sessionId.value = '';
+    userInfo.value = null;
     uni.removeStorageSync('userId');
     uni.removeStorageSync('sessionId');
+    uni.removeStorageSync('userInfo');
   };
 
   // 刷新会话
@@ -44,7 +53,7 @@ export const useUserStore = defineStore('user', () => {
           try {
             // 调用后端登录接口
             const response = await uni.request({
-              url: `${import.meta.env.VITE_API_BASE_URL}/api/auth/wechat-login`,
+              url: `${API_BASE_URL}/api/auth/wechat-login`,
               method: 'POST',
               data: {
                 code: loginRes.code
@@ -79,14 +88,81 @@ export const useUserStore = defineStore('user', () => {
     });
   };
 
+  // 用户名密码登录
+  const login = async (username, password) => {
+    try {
+      const response = await uni.request({
+        url: `${API_BASE_URL}/api/auth/login`,
+        method: 'POST',
+        data: { username, password }
+      });
+
+      if (response.data.success) {
+        const data = response.data.data;
+        setUser({
+          userId: data.userId,
+          sessionId: data.sessionId || `session_${Date.now()}`,
+          userInfo: {
+            username: data.username,
+            avatar: data.avatar
+          }
+        });
+        return { success: true };
+      } else {
+        return { success: false, message: response.data.message || '登录失败' };
+      }
+    } catch (error) {
+      console.error('登录请求失败:', error);
+      return { success: false, message: '网络错误' };
+    }
+  };
+
+  // 注册
+  const register = async (username, password) => {
+    try {
+      const response = await uni.request({
+        url: `${API_BASE_URL}/api/auth/register`,
+        method: 'POST',
+        data: { username, password }
+      });
+
+      if (response.data.success) {
+        const data = response.data.data;
+        setUser({
+          userId: data.userId,
+          sessionId: data.sessionId || `session_${Date.now()}`,
+          userInfo: {
+            username: data.username,
+            avatar: data.avatar
+          }
+        });
+        return { success: true };
+      } else {
+        return { success: false, message: response.data.message || '注册失败' };
+      }
+    } catch (error) {
+      console.error('注册请求失败:', error);
+      return { success: false, message: '网络错误' };
+    }
+  };
+
+  // 退出登录
+  const logout = () => {
+    clearUser();
+  };
+
   return {
     userId,
     sessionId,
+    userInfo,
     isLoggedIn,
     setUser,
     clearUser,
     refreshSession,
-    wechatLogin
+    wechatLogin,
+    login,
+    register,
+    logout
   };
 }, {
   // Pinia持久化配置

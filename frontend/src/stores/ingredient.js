@@ -79,20 +79,24 @@ export const useIngredientStore = defineStore('ingredient', () => {
         }
       });
 
-      if (response.data.success) {
+      const resData = response.data;
+
+      if (resData.success) {
         // 添加到本地列表
-        const created = response.data.data.created || [];
-        ingredients.value = [...ingredients.value, ...created];
+        const created = resData.data?.created || [];
+        if (created.length > 0) {
+          ingredients.value = [...ingredients.value, ...created];
+        }
 
         return {
           success: true,
           created: created.length,
-          skipped: response.data.data.skipped?.length || 0,
-          message: response.data.message
+          skipped: resData.data?.skipped?.length || 0,
+          message: resData.message
         };
       } else {
-        error.value = response.data.message;
-        return { success: false, message: response.data.message };
+        error.value = resData.message;
+        return { success: false, message: resData.message };
       }
     } catch (err) {
       console.error('添加食材失败:', err);

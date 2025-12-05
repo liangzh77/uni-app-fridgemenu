@@ -6,6 +6,28 @@ const logger = require('../config/logger');
 const { Recipe, ImageLibrary, Ingredient } = require('../models');
 const { recommendRecipes, normalizeDishName, generateRecipeHash } = require('./aiService');
 const { getOrGenerateImage } = require('./imageService');
+const { ingredientStore, recipeStore, getStoreKey, getNextMockId, getRecipeById } = require('../utils/memoryStore');
+
+// Mock 模式检测
+const isMockMode = process.env.MOCK_MODE === 'true';
+
+/**
+ * 获取用户食材名称（带降级逻辑）
+ * @param {string} userId - 用户ID
+ * @param {string} sessionId - 会话ID
+ * @returns {Promise<string[]>} 食材名称数组
+ */
+async function getIngredientNamesWithFallback(userId, sessionId) {
+  try {
+    return await Ingredient.getIngredientNames(userId, sessionId);
+  } catch (dbError) {
+    // 数据库不可用，使用内存存储
+    logger.warn('recipeService: 数据库不可用，使用内存存储模式获取食材');
+    const key = getStoreKey(userId, sessionId);
+    const existing = ingredientStore.get(key) || [];
+    return existing.map(i => i.name);
+  }
+}
 
 /**
  * 获取用户食材并推荐菜谱
@@ -21,8 +43,8 @@ async function getRecommendations(userId, sessionId, options = {}) {
     excludeIds = []
   } = options;
 
-  // 1. 获取用户食材
-  const ingredientNames = await Ingredient.getIngredientNames(userId, sessionId);
+  // 1. 获取用户食材（带降级）
+  const ingredientNames = await getIngredientNamesWithFallback(userId, sessionId);
 
   if (ingredientNames.length === 0) {
     throw new Error('请先添加食材');
@@ -32,12 +54,16 @@ async function getRecommendations(userId, sessionId, options = {}) {
 
   // 2. 获取要排除的菜名
   let excludeDishes = [];
-  if (excludeIds.length > 0) {
-    const excludeRecipes = await Recipe.findAll({
-      where: { id: excludeIds },
-      attributes: ['dishName']
-    });
-    excludeDishes = excludeRecipes.map(r => r.dishName);
+  if (excludeIds.length > 0 && !isMockMode) {
+    try {
+      const excludeRecipes = await Recipe.findAll({
+        where: { id: excludeIds },
+        attributes: ['dishName']
+      });
+      excludeDishes = excludeRecipes.map(r => r.dishName);
+    } catch (err) {
+      logger.warn('获取排除菜谱失败，跳过');
+    }
   }
 
   // 3. 调用AI获取推荐
@@ -54,39 +80,83 @@ async function getRecommendations(userId, sessionId, options = {}) {
     // 规范化菜名
     const normalizedName = aiRecipe.normalizedDishName || normalizeDishName(aiRecipe.dishName);
 
-    // 保存或更新菜谱
-    let recipe = await Recipe.findByDishName(normalizedName);
+    let recipe;
+    let imageInfo = { imageUrl: '', imageId: null, isPending: false };
 
-    if (!recipe) {
-      recipe = await Recipe.create({
-        dishName: aiRecipe.dishName,
-        normalizedDishName: normalizedName,
-        ingredientsJson: aiRecipe.ingredients,
-        stepsJson: aiRecipe.steps,
-        cookingTime: aiRecipe.cookingTime,
-        difficulty: aiRecipe.difficulty || 'medium',
-        cuisineType: aiRecipe.cuisineType,
-        tips: aiRecipe.tips
-      });
+    if (isMockMode) {
+      // Mock 模式：使用内存存储
+      recipe = recipeStore.get(normalizedName);
+      if (!recipe) {
+        recipe = {
+          id: getNextMockId(),
+          dishName: aiRecipe.dishName,
+          normalizedDishName: normalizedName,
+          ingredientsJson: aiRecipe.ingredients,
+          stepsJson: aiRecipe.steps,
+          cookingTime: aiRecipe.cookingTime,
+          difficulty: aiRecipe.difficulty || 'medium',
+          cuisineType: aiRecipe.cuisineType,
+          tips: aiRecipe.tips
+        };
+        recipeStore.set(normalizedName, recipe);
+        logger.info(`[Mock模式] 创建菜谱: ${aiRecipe.dishName}`);
+      }
+    } else {
+      // 正常模式：使用数据库
+      try {
+        recipe = await Recipe.findByDishName(normalizedName);
 
-      logger.info(`创建新菜谱: ${aiRecipe.dishName}`);
-    }
+        if (!recipe) {
+          recipe = await Recipe.create({
+            dishName: aiRecipe.dishName,
+            normalizedDishName: normalizedName,
+            ingredientsJson: aiRecipe.ingredients,
+            stepsJson: aiRecipe.steps,
+            cookingTime: aiRecipe.cookingTime,
+            difficulty: aiRecipe.difficulty || 'medium',
+            cuisineType: aiRecipe.cuisineType,
+            tips: aiRecipe.tips
+          });
 
-    // 触发图片生成（异步，不等待）
-    const recipeHash = aiRecipe.recipeHash || generateRecipeHash(normalizedName, ingredientNames);
-    const imageInfo = await getOrGenerateImage(normalizedName, recipeHash);
+          logger.info(`创建新菜谱: ${aiRecipe.dishName}`);
+        }
 
-    // 关联图片
-    if (imageInfo.imageId && !recipe.imageLibraryId) {
-      await Recipe.linkImage(recipe.id, imageInfo.imageId);
+        // 触发图片生成（异步，不等待）
+        const recipeHash = aiRecipe.recipeHash || generateRecipeHash(normalizedName, ingredientNames);
+        imageInfo = await getOrGenerateImage(normalizedName, recipeHash);
+
+        // 关联图片
+        if (imageInfo.imageId && !recipe.imageLibraryId) {
+          await Recipe.linkImage(recipe.id, imageInfo.imageId);
+        }
+      } catch (dbError) {
+        logger.error('数据库操作失败:', dbError);
+        // 降级为 Mock 数据，先检查内存中是否已存在
+        recipe = recipeStore.get(normalizedName);
+        if (!recipe) {
+          recipe = {
+            id: getNextMockId(),
+            dishName: aiRecipe.dishName,
+            normalizedDishName: normalizedName,
+            ingredientsJson: aiRecipe.ingredients,
+            stepsJson: aiRecipe.steps,
+            cookingTime: aiRecipe.cookingTime,
+            difficulty: aiRecipe.difficulty || 'medium',
+            cuisineType: aiRecipe.cuisineType,
+            tips: aiRecipe.tips
+          };
+          recipeStore.set(normalizedName, recipe);
+          logger.info(`[降级模式] 内存创建菜谱: ${aiRecipe.dishName}`);
+        }
+      }
     }
 
     results.push({
       id: recipe.id,
       dishName: recipe.dishName,
       normalizedDishName: recipe.normalizedDishName,
-      ingredients: recipe.ingredientsJson,
-      steps: recipe.stepsJson,
+      ingredients: recipe.ingredientsJson || aiRecipe.ingredients,
+      steps: recipe.stepsJson || aiRecipe.steps,
       cookingTime: recipe.cookingTime,
       difficulty: recipe.difficulty,
       cuisineType: recipe.cuisineType,
@@ -122,25 +192,31 @@ async function refreshRecommendations(userId, sessionId, excludeIds = [], count 
  * @returns {Promise<Object>} 菜谱详情
  */
 async function getRecipeDetail(recipeId, userId = null) {
-  const recipe = await Recipe.findByPk(recipeId, {
-    include: [{
-      model: ImageLibrary,
-      as: 'image',
-      attributes: ['imageUrl', 'imageSizeKb', 'ossDownloaded']
-    }]
-  });
-
-  if (!recipe) {
-    throw new Error('菜谱不存在');
-  }
-
-  // 检查图片状态
+  let recipe;
   let imageUrl = '';
   let imagePending = false;
 
-  if (recipe.image) {
-    imageUrl = recipe.image.imageUrl;
-    imagePending = !recipe.image.ossDownloaded;
+  try {
+    recipe = await Recipe.findByPk(recipeId, {
+      include: [{
+        model: ImageLibrary,
+        as: 'image',
+        attributes: ['imageUrl', 'imageSizeKb', 'ossDownloaded']
+      }]
+    });
+
+    if (recipe && recipe.image) {
+      imageUrl = recipe.image.imageUrl;
+      imagePending = !recipe.image.ossDownloaded;
+    }
+  } catch (dbError) {
+    logger.warn('getRecipeDetail: 数据库不可用，使用内存存储模式');
+    // 从内存中查找菜谱
+    recipe = getRecipeById(recipeId);
+  }
+
+  if (!recipe) {
+    throw new Error('菜谱不存在');
   }
 
   return {

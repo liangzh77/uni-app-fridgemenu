@@ -8,6 +8,9 @@ const crypto = require('crypto');
 const { code2Session } = require('../../config/wechat');
 const logger = require('../../config/logger');
 
+// 内存存储用户数据（开发环境）
+const users = new Map();
+
 /**
  * POST /api/auth/wechat-login
  * 微信小程序登录
@@ -117,6 +120,125 @@ router.get('/check', async (req, res, next) => {
       }
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/register
+ * 用户名密码注册
+ */
+router.post('/register', async (req, res, next) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: '用户名和密码不能为空'
+      });
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: '用户名至少3个字符'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: '密码至少6个字符'
+      });
+    }
+
+    // 检查用户名是否已存在
+    if (users.has(username)) {
+      return res.status(400).json({
+        success: false,
+        message: '用户名已存在'
+      });
+    }
+
+    // 创建用户
+    const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const sessionId = crypto.randomUUID();
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+
+    users.set(username, {
+      userId,
+      username,
+      password: hashedPassword,
+      createdAt: new Date().toISOString()
+    });
+
+    logger.info(`用户注册成功: ${username}`);
+
+    res.json({
+      success: true,
+      data: {
+        userId,
+        sessionId,
+        username
+      },
+      message: '注册成功'
+    });
+  } catch (error) {
+    logger.error('注册失败:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/login
+ * 用户名密码登录
+ */
+router.post('/login', async (req, res, next) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: '用户名和密码不能为空'
+      });
+    }
+
+    // 查找用户
+    const user = users.get(username);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: '用户名或密码错误'
+      });
+    }
+
+    // 验证密码
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
+    if (user.password !== hashedPassword) {
+      return res.status(400).json({
+        success: false,
+        message: '用户名或密码错误'
+      });
+    }
+
+    // 生成新的sessionId
+    const sessionId = crypto.randomUUID();
+
+    logger.info(`用户登录成功: ${username}`);
+
+    res.json({
+      success: true,
+      data: {
+        userId: user.userId,
+        sessionId,
+        username: user.username
+      },
+      message: '登录成功'
+    });
+  } catch (error) {
+    logger.error('登录失败:', error);
     next(error);
   }
 });

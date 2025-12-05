@@ -6,6 +6,12 @@ const express = require('express');
 const router = express.Router();
 const { Favorite, Recipe, ImageLibrary } = require('../../models');
 const logger = require('../../config/logger');
+const {
+  getRecipeById,
+  getUserFavorites,
+  toggleFavorite: memoryToggleFavorite,
+  isFavorited
+} = require('../../utils/memoryStore');
 
 /**
  * GET /api/favorites
@@ -22,40 +28,78 @@ router.get('/', async (req, res, next) => {
       });
     }
 
-    // 获取收藏记录
-    const result = await Favorite.getUserFavorites(userId, {
-      page: parseInt(page),
-      pageSize: parseInt(pageSize)
-    });
+    const pageNum = parseInt(page);
+    const pageSizeNum = parseInt(pageSize);
+    let favorites = [];
+    let total = 0;
 
-    // 获取关联的菜谱详情
-    const recipeIds = result.rows.map(f => f.recipeId);
-    const recipes = await Recipe.findAll({
-      where: { id: recipeIds },
-      include: [{
-        model: ImageLibrary,
-        as: 'image',
-        attributes: ['imageUrl']
-      }]
-    });
+    try {
+      // 获取收藏记录
+      const result = await Favorite.getUserFavorites(userId, {
+        page: pageNum,
+        pageSize: pageSizeNum
+      });
 
-    // 构建响应数据
-    const recipeMap = new Map(recipes.map(r => [r.id, r]));
-    const favorites = result.rows.map(f => ({
-      id: f.id,
-      recipeId: f.recipeId,
-      favoritedAt: f.favoritedAt,
-      recipe: recipeMap.get(f.recipeId) || null
-    }));
+      // 获取关联的菜谱详情
+      const recipeIds = result.rows.map(f => f.recipeId);
+      const recipes = await Recipe.findAll({
+        where: { id: recipeIds },
+        include: [{
+          model: ImageLibrary,
+          as: 'image',
+          attributes: ['imageUrl']
+        }]
+      });
+
+      // 构建响应数据
+      const recipeMap = new Map(recipes.map(r => [r.id, r]));
+      favorites = result.rows.map(f => ({
+        id: f.id,
+        recipeId: f.recipeId,
+        favoritedAt: f.favoritedAt,
+        recipe: recipeMap.get(f.recipeId) || null
+      }));
+      total = result.count;
+    } catch (dbError) {
+      // 数据库不可用，使用内存存储
+      logger.warn('favorites/GET: 数据库不可用，使用内存存储模式');
+
+      const favoriteRecipeIds = getUserFavorites(userId);
+      total = favoriteRecipeIds.length;
+
+      // 分页
+      const start = (pageNum - 1) * pageSizeNum;
+      const end = start + pageSizeNum;
+      const pagedIds = favoriteRecipeIds.slice(start, end);
+
+      // 获取内存中的菜谱详情
+      favorites = pagedIds.map((recipeId, index) => {
+        const recipe = getRecipeById(recipeId);
+        return {
+          id: start + index + 1,
+          recipeId,
+          favoritedAt: new Date().toISOString(),
+          recipe: recipe ? {
+            id: recipe.id,
+            dishName: recipe.dishName,
+            imageUrl: '',
+            ingredientsJson: recipe.ingredientsJson,
+            cookingTime: recipe.cookingTime,
+            difficulty: recipe.difficulty,
+            cuisineType: recipe.cuisineType
+          } : null
+        };
+      }).filter(f => f.recipe);
+    }
 
     res.json({
       success: true,
       data: favorites,
       pagination: {
-        total: result.count,
-        page: parseInt(page),
-        pageSize: parseInt(pageSize),
-        totalPages: Math.ceil(result.count / parseInt(pageSize))
+        total,
+        page: pageNum,
+        pageSize: pageSizeNum,
+        totalPages: Math.ceil(total / pageSizeNum)
       }
     });
   } catch (error) {
@@ -152,16 +196,34 @@ router.post('/toggle', async (req, res, next) => {
       });
     }
 
-    // 检查菜谱是否存在
-    const recipe = await Recipe.findByPk(recipeId);
-    if (!recipe) {
-      return res.status(404).json({
-        success: false,
-        message: '菜谱不存在'
-      });
-    }
+    let result;
 
-    const result = await Favorite.toggleFavorite(userId, recipeId);
+    try {
+      // 检查菜谱是否存在
+      const recipe = await Recipe.findByPk(recipeId);
+      if (!recipe) {
+        return res.status(404).json({
+          success: false,
+          message: '菜谱不存在'
+        });
+      }
+
+      result = await Favorite.toggleFavorite(userId, recipeId);
+    } catch (dbError) {
+      // 数据库不可用，使用内存存储
+      logger.warn('favorites/toggle: 数据库不可用，使用内存存储模式');
+
+      // 检查内存中菜谱是否存在
+      const memoryRecipe = getRecipeById(recipeId);
+      if (!memoryRecipe) {
+        return res.status(404).json({
+          success: false,
+          message: '菜谱不存在'
+        });
+      }
+
+      result = memoryToggleFavorite(userId, recipeId);
+    }
 
     logger.info(`用户 ${userId} ${result.isFavorited ? '收藏' : '取消收藏'} 菜谱 ${recipeId}`);
 

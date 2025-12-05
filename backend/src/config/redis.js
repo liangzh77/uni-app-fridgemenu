@@ -5,6 +5,9 @@
 const Redis = require('ioredis');
 const logger = require('./logger');
 
+// Mock 模式下禁用 Redis
+const isMockMode = process.env.MOCK_MODE === 'true';
+
 // 创建Redis客户端
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
@@ -12,10 +15,15 @@ const redis = new Redis({
   password: process.env.REDIS_PASSWORD || undefined,
   db: 0,
   retryStrategy(times) {
+    // Mock 模式下不重试
+    if (isMockMode) {
+      return null; // 停止重试
+    }
     const delay = Math.min(times * 50, 2000);
     return delay;
   },
-  maxRetriesPerRequest: 3
+  maxRetriesPerRequest: isMockMode ? 0 : 3,
+  lazyConnect: isMockMode // Mock 模式下延迟连接
 });
 
 // 连接事件

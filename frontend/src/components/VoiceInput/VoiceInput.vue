@@ -11,15 +11,22 @@
       @mouseup="stopRecording"
       @mouseleave="handleMouseLeave"
     >
-      <view class="voice-icon">
-        <image
-          v-if="!isRecording && !isStarting"
-          src="/static/icons/mic.png"
-          mode="aspectFit"
-          class="icon-image"
-        />
-        <view v-else class="recording-animation">
-          <view v-for="i in 3" :key="i" class="wave" :style="{ animationDelay: `${i * 0.1}s` }"></view>
+      <!-- 3x3 点阵 -->
+      <view class="dot-matrix">
+        <view class="dot-row">
+          <view class="dot"></view>
+          <view class="dot"></view>
+          <view class="dot"></view>
+        </view>
+        <view class="dot-row">
+          <view class="dot"></view>
+          <view class="dot"></view>
+          <view class="dot"></view>
+        </view>
+        <view class="dot-row">
+          <view class="dot"></view>
+          <view class="dot"></view>
+          <view class="dot"></view>
         </view>
       </view>
       <text class="voice-text">
@@ -27,17 +34,6 @@
       </text>
     </view>
 
-    <!-- 录音状态提示 - 显示在按钮右边 -->
-    <view v-if="isRecording" class="recording-status">
-      <view class="timer">{{ formatTime(recordingTime) }}</view>
-      <!-- H5 音量指示器 -->
-      <!-- #ifdef H5 -->
-      <view class="volume-indicator">
-        <view class="volume-bar" :style="{ width: volumeLevel + '%' }"></view>
-      </view>
-      <!-- #endif -->
-      <view class="tip">↑ 上滑取消</view>
-    </view>
 
     <!-- 识别状态提示 -->
     <view v-if="isProcessing" class="processing-status">
@@ -595,7 +591,6 @@ const recognizeVoice = async (filePath) => {
   align-items: center;
   justify-content: center;
   position: relative;
-  width: 100%;
 }
 
 .voice-button {
@@ -621,40 +616,25 @@ const recognizeVoice = async (filePath) => {
   }
 }
 
-.voice-icon {
-  width: 80rpx;
-  height: 80rpx;
-  margin-bottom: 16rpx;
-}
-
-.icon-image {
-  width: 100%;
-  height: 100%;
-}
-
-.recording-animation {
+// 2x3 点阵样式
+.dot-matrix {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   gap: 8rpx;
-  height: 100%;
+  margin-bottom: 12rpx;
 }
 
-.wave {
-  width: 8rpx;
-  height: 40rpx;
-  background: white;
-  border-radius: 4rpx;
-  animation: wave 0.5s ease-in-out infinite alternate;
+.dot-row {
+  display: flex;
+  gap: 10rpx;
 }
 
-@keyframes wave {
-  from {
-    height: 20rpx;
-  }
-  to {
-    height: 60rpx;
-  }
+.dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: rgba(200, 255, 200, 0.9);
+  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.2);
 }
 
 .voice-text {
@@ -663,40 +643,6 @@ const recognizeVoice = async (filePath) => {
   font-weight: 500;
 }
 
-.recording-status {
-  position: absolute;
-  right: 32rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8rpx;
-
-  .timer {
-    font-size: 36rpx;
-    font-weight: bold;
-    color: #f44336;
-  }
-
-  .volume-indicator {
-    width: 120rpx;
-    height: 12rpx;
-    background: #eee;
-    border-radius: 6rpx;
-    overflow: hidden;
-  }
-
-  .volume-bar {
-    height: 100%;
-    background: linear-gradient(90deg, #4CAF50, #FFEB3B, #f44336);
-    border-radius: 6rpx;
-    transition: width 0.1s ease;
-  }
-
-  .tip {
-    font-size: 22rpx;
-    color: #999;
-  }
-}
 
 .processing-status {
   position: absolute;

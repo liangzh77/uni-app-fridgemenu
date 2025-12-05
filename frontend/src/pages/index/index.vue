@@ -1,62 +1,101 @@
 <template>
   <view class="page-container">
-    <!-- 食材区域 - 顶部 -->
-    <view class="ingredient-section">
-      <IngredientList
-        :ingredients="ingredientStore.ingredients"
-        @delete="handleDeleteIngredient"
-      />
-    </view>
+    <!-- 食材输入区域 -->
+    <view v-if="!showRecommendations" class="input-section">
+      <!-- 食材区域 - 顶部 -->
+      <view class="ingredient-section">
+        <IngredientList
+          :ingredients="ingredientStore.ingredients"
+          @delete="handleDeleteIngredient"
+        />
+      </view>
 
-    <!-- 清空和食谱按钮 -->
-    <view v-if="ingredientStore.hasIngredients" class="action-row">
-      <view class="clear-btn" @click="handleClearIngredients">清空</view>
-      <view class="recipe-btn" @click="handleGoRecipe">食谱</view>
-    </view>
+      <!-- 语音输入区域（含两侧圆形按钮） -->
+      <view class="voice-row">
+        <!-- 左侧清空按钮 -->
+        <view
+          v-if="ingredientStore.hasIngredients"
+          class="side-btn clear-btn"
+          @click="handleClearIngredients"
+        >
+          清空
+        </view>
+        <view v-else class="side-btn-placeholder"></view>
 
-    <!-- 语音输入 -->
-    <view class="voice-row">
-      <VoiceInput
-        @voiceResult="handleVoiceResult"
-        @voiceStart="handleVoiceStart"
-        @voiceEnd="handleVoiceEnd"
-        @voiceError="handleVoiceError"
-      />
-    </view>
+        <!-- 中间语音按钮 -->
+        <VoiceInput
+          @voiceResult="handleVoiceResult"
+          @voiceStart="handleVoiceStart"
+          @voiceEnd="handleVoiceEnd"
+          @voiceError="handleVoiceError"
+        />
 
-    <!-- 手动输入 -->
-    <view class="manual-row">
-      <input
-        v-model="manualIngredient"
-        type="text"
-        placeholder="手动输入食材名称"
-        class="manual-input"
-        :maxlength="20"
-        @confirm="handleManualInputAdd"
-      />
-      <view
-        class="manual-add-btn"
-        :class="{ disabled: !manualIngredient.trim() }"
-        @click="handleManualInputAdd"
-      >
-        添加
+        <!-- 右侧发现按钮 -->
+        <view
+          v-if="ingredientStore.hasIngredients"
+          class="side-btn recipe-btn"
+          @click="handleDiscoverRecipes"
+        >
+          发现
+        </view>
+        <view v-else class="side-btn-placeholder"></view>
+      </view>
+
+      <!-- 手动输入 -->
+      <view class="manual-row">
+        <input
+          v-model="manualIngredient"
+          type="text"
+          placeholder="手动输入食材名称"
+          class="manual-input"
+          :maxlength="20"
+          @confirm="handleManualInputAdd"
+        />
+        <view
+          class="manual-add-btn"
+          :class="{ disabled: !manualIngredient.trim() }"
+          @click="handleManualInputAdd"
+        >
+          添加
+        </view>
       </view>
     </view>
+
+    <!-- 菜谱推荐区域 - 使用通用组件 -->
+    <RecipeList
+      v-else
+      :recipes="recipeStore.recommendations"
+      :loading="recipeStore.loading"
+      :ingredient-names="ingredientStore.ingredientNames"
+      :show-back="true"
+      :show-refresh="true"
+      loading-text="AI正在为您推荐菜谱..."
+      empty-text="未能获取推荐"
+      :empty-hint="recipeStore.error || '请返回添加食材后重试'"
+      @back="handleBackToInput"
+      @refresh="handleRefreshRecipes"
+      @retry="loadRecommendations"
+      @recipe-click="viewRecipeDetail"
+    />
   </view>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 // 组件通过 easycom 自动导入，无需手动 import
 import { useUserStore } from '@/stores/user';
 import { useIngredientStore } from '@/stores/ingredient';
+import { useRecipeStore } from '@/stores/recipe';
 
 // Stores
 const userStore = useUserStore();
 const ingredientStore = useIngredientStore();
+const recipeStore = useRecipeStore();
 
 // 状态
 const manualIngredient = ref('');
+const showRecommendations = ref(false);
+const imagePollingTimer = ref(null);
 
 // 初始化
 onMounted(async () => {
@@ -163,6 +202,19 @@ const handleManualInputAdd = async () => {
     return;
   }
 
+  // 检查登录状态
+  if (!userStore.isLoggedIn) {
+    try {
+      await userStore.wechatLogin();
+    } catch (err) {
+      uni.showToast({
+        title: '请先登录',
+        icon: 'none'
+      });
+      return;
+    }
+  }
+
   const result = await ingredientStore.addIngredients([name]);
   if (result.success && result.created > 0) {
     uni.showToast({
@@ -173,6 +225,11 @@ const handleManualInputAdd = async () => {
   } else if (result.skipped > 0) {
     uni.showToast({
       title: '该食材已存在',
+      icon: 'none'
+    });
+  } else {
+    uni.showToast({
+      title: result.message || '添加失败',
       icon: 'none'
     });
   }
@@ -189,24 +246,114 @@ const handleClearIngredients = async () => {
   }
 };
 
-// 跳转到食谱推荐页
-const handleGoRecipe = () => {
-  uni.switchTab({
-    url: '/pages/recipe/recommend'
+// 点击"发现"按钮，在首页显示推荐
+const handleDiscoverRecipes = async () => {
+  showRecommendations.value = true;
+  await loadRecommendations();
+  startImagePolling();
+};
+
+// 加载推荐
+const loadRecommendations = async () => {
+  const result = await recipeStore.getRecommendations();
+  if (!result.success) {
+    uni.showToast({
+      title: result.message || '获取推荐失败',
+      icon: 'none'
+    });
+  }
+};
+
+// 换一批
+const handleRefreshRecipes = async () => {
+  const result = await recipeStore.refreshRecommendations();
+  if (result.success) {
+    uni.showToast({
+      title: '已为您换一批推荐',
+      icon: 'success'
+    });
+    startImagePolling();
+  } else {
+    uni.showToast({
+      title: result.message || '刷新失败',
+      icon: 'none'
+    });
+  }
+};
+
+// 返回食材输入界面
+const handleBackToInput = () => {
+  showRecommendations.value = false;
+  stopImagePolling();
+};
+
+// 查看菜谱详情
+const viewRecipeDetail = (recipe) => {
+  uni.navigateTo({
+    url: `/pages/recipe/detail?id=${recipe.id}`
   });
 };
+
+// 图片状态轮询
+const startImagePolling = () => {
+  stopImagePolling();
+
+  imagePollingTimer.value = setInterval(async () => {
+    const pendingRecipes = recipeStore.recommendations.filter(r => r.imagePending && r.imageId);
+
+    if (pendingRecipes.length === 0) {
+      stopImagePolling();
+      return;
+    }
+
+    const imageIds = pendingRecipes.map(r => r.imageId);
+    const statusMap = await recipeStore.batchCheckImageStatus(imageIds);
+
+    for (const recipe of pendingRecipes) {
+      const status = statusMap[recipe.imageId];
+      if (status?.ready && status.imageUrl) {
+        recipeStore.updateImageUrl(recipe.id, status.imageUrl);
+      }
+    }
+  }, 3000);
+};
+
+const stopImagePolling = () => {
+  if (imagePollingTimer.value) {
+    clearInterval(imagePollingTimer.value);
+    imagePollingTimer.value = null;
+  }
+};
+
+// 清理
+onUnmounted(() => {
+  stopImagePolling();
+});
 </script>
 
 <style lang="scss" scoped>
 .page-container {
   display: flex;
   flex-direction: column;
-  // H5端: 100vh - 导航栏(44px)
-  // 使用padding-bottom确保内容不被tabBar(70px)遮挡
-  height: calc(100vh - 44px);
-  padding-bottom: 80px;
-  box-sizing: border-box;
   background: linear-gradient(180deg, #f0f9f0 0%, #ffffff 30%);
+  overflow: hidden;
+  box-sizing: border-box;
+
+  /* #ifdef H5 */
+  height: calc(100vh - 44px);
+  padding-bottom: 60px;
+  /* #endif */
+
+  /* #ifdef MP-WEIXIN */
+  height: 100%;
+  /* #endif */
+}
+
+// 食材输入区域
+.input-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -219,46 +366,54 @@ const handleGoRecipe = () => {
   min-height: 0;
 }
 
-// 操作按钮行
-.action-row {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: center;
-  gap: 32rpx;
-  padding: 16rpx 32rpx;
-}
-
-.clear-btn {
-  padding: 12rpx 48rpx;
-  background: #ffebee;
-  border-radius: 32rpx;
-  color: #f44336;
-  font-size: 28rpx;
-
-  &:active {
-    background: #ffcdd2;
-  }
-}
-
-.recipe-btn {
-  padding: 12rpx 48rpx;
-  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-  border-radius: 32rpx;
-  color: white;
-  font-size: 28rpx;
-  font-weight: 500;
-
-  &:active {
-    opacity: 0.8;
-  }
-}
-
-// 语音输入行
+// 语音输入行（含两侧圆形按钮）
 .voice-row {
   flex-shrink: 0;
   display: flex;
   justify-content: center;
-  padding: 16rpx 32rpx;
+  align-items: center;
+  padding: 24rpx 32rpx;
+  gap: 60rpx;
+}
+
+// 两侧圆形按钮通用样式
+.side-btn {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 500;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.side-btn-placeholder {
+  width: 140rpx;
+  height: 140rpx;
+  flex-shrink: 0;
+}
+
+.clear-btn {
+  background: #ffebee;
+  color: #f44336;
+
+  &:active {
+    background: #ffcdd2;
+    transform: scale(0.95);
+  }
+}
+
+.recipe-btn {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+
+  &:active {
+    opacity: 0.8;
+    transform: scale(0.95);
+  }
 }
 
 // 手动输入行
