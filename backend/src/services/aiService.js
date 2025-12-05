@@ -32,7 +32,8 @@ const MOCK_RECIPES = [
     cookingTime: 15,
     difficulty: 'easy',
     cuisineType: '家常菜',
-    tips: '番茄要炒出汁，鸡蛋不要炒太老'
+    tips: '番茄要炒出汁，鸡蛋不要炒太老',
+    score: 10
   },
   {
     dishName: '青椒土豆丝',
@@ -47,7 +48,8 @@ const MOCK_RECIPES = [
     cookingTime: 20,
     difficulty: 'easy',
     cuisineType: '家常菜',
-    tips: '土豆丝要泡水去淀粉才会脆'
+    tips: '土豆丝要泡水去淀粉才会脆',
+    score: 9
   },
   {
     dishName: '红烧肉',
@@ -62,7 +64,8 @@ const MOCK_RECIPES = [
     cookingTime: 90,
     difficulty: 'medium',
     cuisineType: '家常菜',
-    tips: '小火慢炖才能入味软烂'
+    tips: '小火慢炖才能入味软烂',
+    score: 9
   },
   {
     dishName: '蒜蓉西兰花',
@@ -76,7 +79,8 @@ const MOCK_RECIPES = [
     cookingTime: 10,
     difficulty: 'easy',
     cuisineType: '粤菜',
-    tips: '焯水时加点盐和油保持翠绿'
+    tips: '焯水时加点盐和油保持翠绿',
+    score: 8
   },
   {
     dishName: '可乐鸡翅',
@@ -91,7 +95,8 @@ const MOCK_RECIPES = [
     cookingTime: 35,
     difficulty: 'easy',
     cuisineType: '家常菜',
-    tips: '用普通可乐，不要用无糖的'
+    tips: '用普通可乐，不要用无糖的',
+    score: 8
   },
   {
     dishName: '鱼香肉丝',
@@ -106,7 +111,70 @@ const MOCK_RECIPES = [
     cookingTime: 25,
     difficulty: 'medium',
     cuisineType: '川菜',
-    tips: '鱼香汁的酸甜比例是关键'
+    tips: '鱼香汁的酸甜比例是关键',
+    score: 7
+  },
+  {
+    dishName: '蒜苗炒肉',
+    normalizedDishName: '蒜苗炒肉',
+    ingredients: [
+      { name: '蒜苗', amount: '200g', isMain: true },
+      { name: '猪肉', amount: '150g', isMain: true },
+      { name: '生抽', amount: '1勺', isMain: false }
+    ],
+    steps: ['猪肉切片用生抽腌制', '蒜苗切段', '热锅炒散肉片', '下蒜苗大火翻炒', '加盐调味出锅'],
+    cookingTime: 15,
+    difficulty: 'easy',
+    cuisineType: '家常菜',
+    tips: '蒜苗要大火快炒保持脆嫩',
+    score: 7
+  },
+  {
+    dishName: '糖醋里脊',
+    normalizedDishName: '糖醋里脊',
+    ingredients: [
+      { name: '猪里脊', amount: '300g', isMain: true },
+      { name: '淀粉', amount: '适量', isMain: false },
+      { name: '番茄酱', amount: '2勺', isMain: false },
+      { name: '白醋', amount: '1勺', isMain: false }
+    ],
+    steps: ['里脊切条腌制', '裹淀粉炸至金黄', '调糖醋汁', '锅中倒入糖醋汁煮开', '放入炸好的里脊翻炒均匀'],
+    cookingTime: 30,
+    difficulty: 'medium',
+    cuisineType: '鲁菜',
+    tips: '复炸一次更酥脆',
+    score: 6
+  },
+  {
+    dishName: '麻婆豆腐',
+    normalizedDishName: '麻婆豆腐',
+    ingredients: [
+      { name: '豆腐', amount: '1块', isMain: true },
+      { name: '肉末', amount: '100g', isMain: true },
+      { name: '豆瓣酱', amount: '1勺', isMain: false },
+      { name: '花椒', amount: '适量', isMain: false }
+    ],
+    steps: ['豆腐切块焯水', '炒散肉末', '加豆瓣酱炒出红油', '加水烧开放入豆腐', '小火煮5分钟勾芡', '撒花椒粉出锅'],
+    cookingTime: 20,
+    difficulty: 'medium',
+    cuisineType: '川菜',
+    tips: '豆腐要嫩，花椒要香',
+    score: 6
+  },
+  {
+    dishName: '清炒时蔬',
+    normalizedDishName: '清炒时蔬',
+    ingredients: [
+      { name: '青菜', amount: '300g', isMain: true },
+      { name: '蒜', amount: '3瓣', isMain: false },
+      { name: '盐', amount: '适量', isMain: false }
+    ],
+    steps: ['青菜洗净控水', '蒜切末', '热锅爆香蒜末', '下青菜大火翻炒', '加盐调味出锅'],
+    cookingTime: 5,
+    difficulty: 'easy',
+    cuisineType: '家常菜',
+    tips: '大火快炒保持翠绿',
+    score: 5
   }
 ];
 
@@ -204,7 +272,7 @@ function getMockRecipes(ingredients, count = 3, excludeDishes = []) {
  * 根据食材推荐菜谱
  * @param {string[]} ingredients - 食材列表
  * @param {Object} options - 选项
- * @returns {Promise<Array<{dishName, ingredients, steps, cookingTime, difficulty, cuisineType, tips}>>}
+ * @returns {Promise<Array<{dishName, ingredients, steps, cookingTime, difficulty, cuisineType, tips, score}>>}
  */
 async function recommendRecipes(ingredients, options = {}) {
   const {
@@ -233,12 +301,13 @@ async function recommendRecipes(ingredients, options = {}) {
     : '';
 
   const prompt = `
-根据以下食材推荐${count}道家常菜：${ingredientList}
+用${ingredientList}，可以包含一些常用佐料（盐、酱油、醋、糖、葱姜蒜等），可以做什么饭菜？
+不要超出这些食材，可以只用其中一部分，给我列举${count}个做法。
+${excludeClause}${preferenceClause}${difficultyClause}
 
 要求：
-1. 每道菜至少使用50%的输入食材
-2. 推荐结果包含不同菜系或难度（至少80%结果体现多样性）
-3. ${excludeClause}${preferenceClause}${difficultyClause}
+1. 推荐分数从1到10分，根据食材匹配度、做法难易度、美味程度综合评分
+2. 按推荐分降序排序返回
 
 请严格按照以下JSON格式返回：
 {
@@ -253,7 +322,8 @@ async function recommendRecipes(ingredients, options = {}) {
       "cookingTime": 30,
       "difficulty": "easy|medium|hard",
       "cuisineType": "川菜|粤菜|鲁菜|苏菜|浙菜|闽菜|湘菜|徽菜|家常菜",
-      "tips": "烹饪小贴士"
+      "tips": "烹饪小贴士",
+      "score": 10
     }
   ]
 }
@@ -261,10 +331,12 @@ async function recommendRecipes(ingredients, options = {}) {
 注意：
 - cookingTime是整数，单位分钟
 - difficulty只能是easy、medium、hard三选一
+- score是1-10的整数，表示推荐程度
 - normalizedDishName应该是简洁的菜名，如"番茄炒蛋"而不是"妈妈的番茄炒蛋"
+- 结果必须按score降序排列
 `;
 
-  const response = await callQwenAPI(prompt);
+  const response = await callQwenAPI(prompt, { maxTokens: 4000 });
 
   // 解析JSON响应
   try {
@@ -276,7 +348,10 @@ async function recommendRecipes(ingredients, options = {}) {
     }
 
     const data = JSON.parse(jsonStr);
-    const recipes = data.recipes || [];
+    let recipes = data.recipes || [];
+
+    // 确保按score降序排序
+    recipes.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     // 生成唯一hash
     return recipes.map(recipe => ({

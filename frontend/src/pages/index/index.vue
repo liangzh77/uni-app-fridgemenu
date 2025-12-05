@@ -248,6 +248,26 @@ const handleClearIngredients = async () => {
 
 // 点击"发现"按钮，在首页显示推荐
 const handleDiscoverRecipes = async () => {
+  // 如果食材正在加载中，等待完成
+  if (ingredientStore.loading) {
+    uni.showToast({
+      title: '请稍候...',
+      icon: 'loading'
+    });
+    return;
+  }
+
+  // 如果输入框有未添加的食材，先添加它
+  const pendingIngredient = manualIngredient.value.trim();
+  if (pendingIngredient) {
+    const result = await ingredientStore.addIngredients([pendingIngredient]);
+    if (result.success && result.created > 0) {
+      manualIngredient.value = '';
+    }
+  }
+
+  // 清空旧推荐，确保每次点击都重新获取
+  recipeStore.clearRecommendations();
   showRecommendations.value = true;
   await loadRecommendations();
   startImagePolling();

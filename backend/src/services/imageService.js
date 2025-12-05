@@ -24,7 +24,7 @@ const MAX_POLL_ATTEMPTS = 60; // 最多等待2分钟
  */
 async function createImageTask(dishName, options = {}) {
   const {
-    style = 'realistic',
+    style = '<photography>',
     size = '1024*1024'
   } = options;
 

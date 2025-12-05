@@ -61,7 +61,13 @@
 
         <!-- 信息区域 -->
         <view class="row-info">
-          <text class="row-dish-name">{{ recipe.dishName }}</text>
+          <view class="row-title-line">
+            <text class="row-dish-name">{{ recipe.dishName }}</text>
+            <view v-if="recipe.score" class="score-badge">
+              <text class="score-value">{{ recipe.score }}</text>
+              <text class="score-label">分</text>
+            </view>
+          </view>
           <text class="row-ingredients">{{ formatIngredients(recipe.ingredients) }}</text>
         </view>
 
@@ -351,6 +357,12 @@ const handleRecipeClick = (recipe) => emit('recipe-click', recipe);
   gap: 8rpx;
 }
 
+.row-title-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
 .row-dish-name {
   font-size: 40rpx;
   font-weight: 600;
@@ -358,6 +370,27 @@ const handleRecipeClick = (recipe) => emit('recipe-click', recipe);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.score-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  padding: 4rpx 12rpx;
+  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+  border-radius: 16rpx;
+}
+
+.score-value {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: white;
+}
+
+.score-label {
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.9);
+  margin-left: 2rpx;
 }
 
 .row-ingredients {

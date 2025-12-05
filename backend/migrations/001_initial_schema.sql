@@ -115,6 +115,25 @@ CREATE TABLE IF NOT EXISTS favorites (
 COMMENT='用户收藏表';
 
 -- ========================================
+-- 6. recommendation_cache表 - 菜谱推荐缓存
+-- ========================================
+CREATE TABLE IF NOT EXISTS recommendation_cache (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    ingredients_hash VARCHAR(64) NOT NULL COMMENT '食材组合的哈希值(排序后MD5)',
+    ingredients_list TEXT NOT NULL COMMENT '食材列表(逗号分隔，用于显示)',
+    recipes_json JSON NOT NULL COMMENT '推荐的菜谱列表JSON(包含10个菜谱)',
+    total_count INT NOT NULL DEFAULT 10 COMMENT '菜谱总数',
+    expires_at TIMESTAMP NULL COMMENT '缓存过期时间(null表示永不过期)',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    UNIQUE KEY uk_ingredients_hash (ingredients_hash),
+    INDEX idx_created_at (created_at),
+    INDEX idx_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='菜谱推荐缓存表';
+
+-- ========================================
 -- 插入初始同义词数据
 -- ========================================
 -- 详见 database/seeds/food_synonyms.sql

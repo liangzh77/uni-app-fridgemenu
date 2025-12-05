@@ -1,15 +1,23 @@
 /**
  * 菜谱服务
  * 整合AI推荐和图片生成
+ * 支持缓存和分批返回
  */
 const logger = require('../config/logger');
-const { Recipe, ImageLibrary, Ingredient } = require('../models');
+const { Recipe, ImageLibrary, Ingredient, RecommendationCache } = require('../models');
 const { recommendRecipes, normalizeDishName, generateRecipeHash } = require('./aiService');
 const { getOrGenerateImage } = require('./imageService');
 const { ingredientStore, recipeStore, getStoreKey, getNextMockId, getRecipeById } = require('../utils/memoryStore');
 
 // Mock 模式检测
 const isMockMode = process.env.MOCK_MODE === 'true';
+
+// 每批返回的菜谱数量
+const BATCH_SIZE = 3;
+// 总共请求的菜谱数量
+const TOTAL_RECIPES = 3;
+// 最少需要的菜谱数量（少于此数量时调用AI扩充）
+const MIN_RECIPES = 3;
 
 /**
  * 获取用户食材名称（带降级逻辑）
@@ -31,16 +39,16 @@ async function getIngredientNamesWithFallback(userId, sessionId) {
 
 /**
  * 获取用户食材并推荐菜谱
+ * 首次调用时从缓存或AI获取10个菜谱，返回前3个
  * @param {string} userId - 用户ID
  * @param {string} sessionId - 会话ID
  * @param {Object} options - 选项
- * @returns {Promise<Array>} 推荐的菜谱列表
+ * @returns {Promise<{recipes: Array, batchIndex: number, totalBatches: number, hasMore: boolean}>}
  */
 async function getRecommendations(userId, sessionId, options = {}) {
   const {
-    count = 3,
-    preferences = {},
-    excludeIds = []
+    batchIndex = 0,  // 当前批次索引，0表示第一批
+    preferences = {}
   } = options;
 
   // 1. 获取用户食材（带降级）
@@ -50,41 +58,118 @@ async function getRecommendations(userId, sessionId, options = {}) {
     throw new Error('请先添加食材');
   }
 
-  logger.info(`用户 ${userId} 请求推荐，食材: ${ingredientNames.join('、')}`);
+  logger.info(`用户 ${userId} 请求推荐，食材: ${ingredientNames.join('、')}，批次: ${batchIndex}`);
 
-  // 2. 获取要排除的菜名
-  let excludeDishes = [];
-  if (excludeIds.length > 0 && !isMockMode) {
+  // 2. 尝试从缓存获取
+  let allRecipes = null;
+  let fromCache = false;
+
+  if (!isMockMode) {
     try {
-      const excludeRecipes = await Recipe.findAll({
-        where: { id: excludeIds },
-        attributes: ['dishName']
-      });
-      excludeDishes = excludeRecipes.map(r => r.dishName);
+      const cache = await RecommendationCache.findByIngredients(ingredientNames);
+      if (cache) {
+        allRecipes = cache.recipesJson;
+        fromCache = true;
+        logger.info(`从缓存获取推荐，共 ${allRecipes.length} 个菜谱`);
+      }
     } catch (err) {
-      logger.warn('获取排除菜谱失败，跳过');
+      logger.warn('查询缓存失败，将调用AI:', err.message);
     }
   }
 
-  // 3. 调用AI获取推荐
-  const aiRecipes = await recommendRecipes(ingredientNames, {
-    count,
-    preferences,
-    excludeDishes
-  });
+  // 3. 如果没有缓存，调用AI获取推荐
+  if (!allRecipes) {
+    logger.info('调用AI获取推荐...');
+    const aiRecipes = await recommendRecipes(ingredientNames, {
+      count: TOTAL_RECIPES,
+      preferences
+    });
 
-  // 4. 保存菜谱并触发图片生成
+    // 保存到缓存
+    if (!isMockMode) {
+      try {
+        await RecommendationCache.upsertCache(ingredientNames, aiRecipes, 7);
+        logger.info(`已缓存 ${aiRecipes.length} 个菜谱`);
+      } catch (err) {
+        logger.warn('保存缓存失败:', err.message);
+      }
+    }
+
+    allRecipes = aiRecipes;
+  }
+
+  // 3.1 如果缓存中的菜谱少于 MIN_RECIPES，调用AI扩充
+  if (allRecipes.length < MIN_RECIPES) {
+    logger.info(`缓存菜谱不足（${allRecipes.length}个），调用AI扩充...`);
+    const existingDishNames = allRecipes.map(r => r.dishName || r.normalizedDishName);
+    const additionalRecipes = await recommendRecipes(ingredientNames, {
+      count: TOTAL_RECIPES,
+      preferences,
+      excludeDishes: existingDishNames
+    });
+
+    // 合并并去重
+    const mergedRecipes = [...allRecipes];
+    for (const recipe of additionalRecipes) {
+      const name = recipe.normalizedDishName || normalizeDishName(recipe.dishName);
+      if (!mergedRecipes.some(r => (r.normalizedDishName || normalizeDishName(r.dishName)) === name)) {
+        mergedRecipes.push(recipe);
+      }
+    }
+
+    allRecipes = mergedRecipes;
+    fromCache = false;
+
+    // 更新缓存
+    if (!isMockMode) {
+      try {
+        await RecommendationCache.upsertCache(ingredientNames, allRecipes, 7);
+        logger.info(`已扩充并缓存 ${allRecipes.length} 个菜谱`);
+      } catch (err) {
+        logger.warn('更新缓存失败:', err.message);
+      }
+    }
+  }
+
+  // 4. 计算分批（支持循环）
+  const totalRecipes = allRecipes.length;
+  const totalBatches = Math.ceil(totalRecipes / BATCH_SIZE);
+
+  // 使用取模实现循环，batchIndex 可以无限增长
+  const effectiveBatchIndex = batchIndex % totalBatches;
+  const startIndex = effectiveBatchIndex * BATCH_SIZE;
+  const endIndex = Math.min(startIndex + BATCH_SIZE, totalRecipes);
+  const batchRecipes = allRecipes.slice(startIndex, endIndex);
+
+  // 如果当前批次是最后一批且不满3个，从头部补充
+  let finalBatchRecipes = batchRecipes;
+  if (batchRecipes.length < BATCH_SIZE && totalRecipes >= BATCH_SIZE) {
+    const remaining = BATCH_SIZE - batchRecipes.length;
+    const wrapAroundRecipes = allRecipes.slice(0, remaining);
+    finalBatchRecipes = [...batchRecipes, ...wrapAroundRecipes];
+    logger.info(`最后一批不足${BATCH_SIZE}个，从头部补充${remaining}个`);
+  }
+
+  if (finalBatchRecipes.length === 0) {
+    return {
+      recipes: [],
+      batchIndex: effectiveBatchIndex,
+      totalBatches,
+      hasMore: true, // 循环模式永远有更多
+      fromCache,
+      isLooping: true
+    };
+  }
+
+  // 5. 处理每个菜谱（保存到数据库、触发图片生成）
   const results = [];
 
-  for (const aiRecipe of aiRecipes) {
-    // 规范化菜名
+  for (const aiRecipe of finalBatchRecipes) {
     const normalizedName = aiRecipe.normalizedDishName || normalizeDishName(aiRecipe.dishName);
-
     let recipe;
     let imageInfo = { imageUrl: '', imageId: null, isPending: false };
 
     if (isMockMode) {
-      // Mock 模式：使用内存存储
       recipe = recipeStore.get(normalizedName);
       if (!recipe) {
         recipe = {
@@ -96,13 +181,13 @@ async function getRecommendations(userId, sessionId, options = {}) {
           cookingTime: aiRecipe.cookingTime,
           difficulty: aiRecipe.difficulty || 'medium',
           cuisineType: aiRecipe.cuisineType,
-          tips: aiRecipe.tips
+          tips: aiRecipe.tips,
+          score: aiRecipe.score || 5
         };
         recipeStore.set(normalizedName, recipe);
         logger.info(`[Mock模式] 创建菜谱: ${aiRecipe.dishName}`);
       }
     } else {
-      // 正常模式：使用数据库
       try {
         recipe = await Recipe.findByDishName(normalizedName);
 
@@ -117,21 +202,18 @@ async function getRecommendations(userId, sessionId, options = {}) {
             cuisineType: aiRecipe.cuisineType,
             tips: aiRecipe.tips
           });
-
           logger.info(`创建新菜谱: ${aiRecipe.dishName}`);
         }
 
-        // 触发图片生成（异步，不等待）
+        // 触发图片生成
         const recipeHash = aiRecipe.recipeHash || generateRecipeHash(normalizedName, ingredientNames);
         imageInfo = await getOrGenerateImage(normalizedName, recipeHash);
 
-        // 关联图片
         if (imageInfo.imageId && !recipe.imageLibraryId) {
           await Recipe.linkImage(recipe.id, imageInfo.imageId);
         }
       } catch (dbError) {
         logger.error('数据库操作失败:', dbError);
-        // 降级为 Mock 数据，先检查内存中是否已存在
         recipe = recipeStore.get(normalizedName);
         if (!recipe) {
           recipe = {
@@ -143,7 +225,8 @@ async function getRecommendations(userId, sessionId, options = {}) {
             cookingTime: aiRecipe.cookingTime,
             difficulty: aiRecipe.difficulty || 'medium',
             cuisineType: aiRecipe.cuisineType,
-            tips: aiRecipe.tips
+            tips: aiRecipe.tips,
+            score: aiRecipe.score || 5
           };
           recipeStore.set(normalizedName, recipe);
           logger.info(`[降级模式] 内存创建菜谱: ${aiRecipe.dishName}`);
@@ -161,27 +244,38 @@ async function getRecommendations(userId, sessionId, options = {}) {
       difficulty: recipe.difficulty,
       cuisineType: recipe.cuisineType,
       tips: recipe.tips,
+      score: aiRecipe.score || 5,
       imageUrl: imageInfo.imageUrl,
       imageId: imageInfo.imageId,
       imagePending: imageInfo.isPending
     });
   }
 
-  return results;
+  // 判断是否开始循环（已经显示过所有菜谱至少一轮）
+  const isLooping = batchIndex >= totalBatches;
+
+  return {
+    recipes: results,
+    batchIndex: effectiveBatchIndex,
+    totalBatches,
+    totalRecipes,
+    hasMore: true, // 循环模式永远有更多
+    fromCache,
+    isLooping
+  };
 }
 
 /**
  * 刷新推荐（换一批）
+ * 返回下一批菜谱
  * @param {string} userId - 用户ID
  * @param {string} sessionId - 会话ID
- * @param {number[]} excludeIds - 要排除的菜谱ID
- * @param {number} count - 推荐数量
- * @returns {Promise<Array>} 新的推荐菜谱列表
+ * @param {number} currentBatchIndex - 当前批次索引
+ * @returns {Promise<{recipes: Array, batchIndex: number, totalBatches: number, hasMore: boolean}>}
  */
-async function refreshRecommendations(userId, sessionId, excludeIds = [], count = 3) {
+async function refreshRecommendations(userId, sessionId, currentBatchIndex = 0) {
   return getRecommendations(userId, sessionId, {
-    count,
-    excludeIds
+    batchIndex: currentBatchIndex + 1
   });
 }
 

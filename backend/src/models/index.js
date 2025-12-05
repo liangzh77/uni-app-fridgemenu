@@ -8,6 +8,7 @@ const Recipe = require('./Recipe');
 const Favorite = require('./Favorite');
 const ImageLibrary = require('./ImageLibrary');
 const FoodSynonymMapping = require('./FoodSynonymMapping');
+const RecommendationCache = require('./RecommendationCache');
 
 // 设置模型关联
 
@@ -60,6 +61,7 @@ module.exports = {
   Favorite,
   ImageLibrary,
   FoodSynonymMapping,
+  RecommendationCache,
   syncModels,
   testConnection
 };
