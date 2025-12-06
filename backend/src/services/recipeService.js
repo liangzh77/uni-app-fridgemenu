@@ -5,7 +5,7 @@
  */
 const logger = require('../config/logger');
 const { Recipe, ImageLibrary, Ingredient, RecommendationCache } = require('../models');
-const { recommendRecipes, normalizeDishName, generateRecipeHash } = require('./aiService');
+const { recommendRecipes, getRecipeNames, getRecipeDetail: getAIRecipeDetail, normalizeDishName, generateRecipeHash } = require('./aiService');
 const { getOrGenerateImage } = require('./imageService');
 const { ingredientStore, recipeStore, getStoreKey, getNextMockId, getRecipeById } = require('../utils/memoryStore');
 
@@ -196,6 +196,8 @@ async function getRecommendations(userId, sessionId, options = {}) {
             dishName: aiRecipe.dishName,
             normalizedDishName: normalizedName,
             ingredientsJson: aiRecipe.ingredients,
+            mainIngredientsJson: aiRecipe.mainIngredients || null,
+            seasoningsJson: aiRecipe.seasonings || null,
             stepsJson: aiRecipe.steps,
             cookingTime: aiRecipe.cookingTime,
             difficulty: aiRecipe.difficulty || 'medium',
@@ -239,6 +241,8 @@ async function getRecommendations(userId, sessionId, options = {}) {
       dishName: recipe.dishName,
       normalizedDishName: recipe.normalizedDishName,
       ingredients: recipe.ingredientsJson || aiRecipe.ingredients,
+      mainIngredients: recipe.mainIngredientsJson || aiRecipe.mainIngredients || null,
+      seasonings: recipe.seasoningsJson || aiRecipe.seasonings || null,
       steps: recipe.stepsJson || aiRecipe.steps,
       cookingTime: recipe.cookingTime,
       difficulty: recipe.difficulty,
@@ -318,6 +322,8 @@ async function getRecipeDetail(recipeId, userId = null) {
     dishName: recipe.dishName,
     normalizedDishName: recipe.normalizedDishName,
     ingredients: recipe.ingredientsJson,
+    mainIngredients: recipe.mainIngredientsJson || null,
+    seasonings: recipe.seasoningsJson || null,
     steps: recipe.stepsJson,
     cookingTime: recipe.cookingTime,
     difficulty: recipe.difficulty,
@@ -375,9 +381,296 @@ async function batchCheckImageStatus(imageIds) {
   return result;
 }
 
+/**
+ * 获取菜名列表（第一步，快速返回）
+ * 新逻辑：优先从数据库查找匹配食材的已有菜谱，不足再用AI补充
+ * @param {string} userId - 用户ID
+ * @param {string} sessionId - 会话ID
+ * @returns {Promise<{names: Array, fromCache: boolean, existingRecipes: Array}>}
+ */
+async function getRecipeNamesForUser(userId, sessionId) {
+  // 1. 获取用户食材
+  const ingredientNames = await getIngredientNamesWithFallback(userId, sessionId);
+
+  if (ingredientNames.length === 0) {
+    throw new Error('请先添加食材');
+  }
+
+  logger.info(`[Names] 用户 ${userId} 请求菜名列表，食材: ${ingredientNames.join('、')}`);
+
+  const allNames = [];
+  const existingRecipes = []; // 存储已有菜谱的完整信息
+
+  // 2. 优先从数据库查找匹配食材的已有菜谱
+  if (!isMockMode) {
+    try {
+      const dbRecipes = await Recipe.findByIngredients(ingredientNames, TOTAL_RECIPES);
+      if (dbRecipes.length > 0) {
+        logger.info(`[Names] 从数据库找到 ${dbRecipes.length} 个匹配的已有菜谱`);
+
+        for (const recipe of dbRecipes) {
+          allNames.push({
+            dishName: recipe.dishName,
+            score: 5,
+            fromDb: true // 标记来自数据库
+          });
+
+          // 查询图片信息
+          let imageUrl = '';
+          let imageId = recipe.imageLibraryId || null;
+          let imagePending = false;
+
+          if (recipe.imageLibraryId) {
+            try {
+              const imageRecord = await ImageLibrary.findByPk(recipe.imageLibraryId);
+              if (imageRecord) {
+                if (imageRecord.ossDownloaded && imageRecord.imageUrl) {
+                  imageUrl = imageRecord.imageUrl;
+                  imagePending = false;
+                } else {
+                  // 图片还在生成中
+                  imagePending = true;
+                }
+              }
+            } catch (imgErr) {
+              logger.warn(`[Names] 查询图片失败 (id=${recipe.imageLibraryId}):`, imgErr.message);
+            }
+          }
+
+          // 保存完整菜谱信息，后续直接使用
+          existingRecipes.push({
+            id: recipe.id,
+            dishName: recipe.dishName,
+            normalizedDishName: recipe.normalizedDishName,
+            ingredients: recipe.ingredientsJson,
+            steps: recipe.stepsJson,
+            cookingTime: recipe.cookingTime,
+            difficulty: recipe.difficulty,
+            cuisineType: recipe.cuisineType,
+            tips: recipe.tips,
+            imageLibraryId: imageId,
+            imageUrl: imageUrl,
+            imagePending: imagePending
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn('[Names] 查询数据库失败:', err.message);
+    }
+  }
+
+  // 3. 计算还需要生成多少个
+  const needCount = TOTAL_RECIPES - allNames.length;
+
+  if (needCount > 0) {
+    // 获取已有菜名，用于排除重复
+    const existingDishNames = allNames.map(n => n.dishName);
+
+    logger.info(`[Names] 还需要生成 ${needCount} 个菜谱，排除: ${existingDishNames.join('、')}`);
+
+    // 调用 AI 获取剩余菜名
+    const aiNames = await getRecipeNames(ingredientNames, {
+      count: needCount,
+      excludeDishes: existingDishNames
+    });
+
+    if (aiNames.length > 0) {
+      logger.info(`[Names] AI 返回 ${aiNames.length} 个菜名: ${aiNames.map(n => n.dishName).join('、')}`);
+      allNames.push(...aiNames.map(n => ({ ...n, fromDb: false })));
+    }
+  }
+
+  if (allNames.length === 0) {
+    throw new Error('未能获取推荐');
+  }
+
+  logger.info(`[Names] 最终返回 ${allNames.length} 个菜名: ${allNames.map(n => n.dishName).join('、')}`);
+  return { names: allNames, fromCache: false, ingredientNames, existingRecipes };
+}
+
+/**
+ * 获取单个菜谱详情（第二步，逐个调用）
+ * @param {string} userId - 用户ID
+ * @param {string} sessionId - 会话ID
+ * @param {string} dishName - 菜名
+ * @param {number} score - 推荐分
+ * @returns {Promise<Object>}
+ */
+async function getSingleRecipeDetail(userId, sessionId, dishName, score = 5) {
+  // 1. 获取用户食材
+  const ingredientNames = await getIngredientNamesWithFallback(userId, sessionId);
+
+  if (ingredientNames.length === 0) {
+    throw new Error('请先添加食材');
+  }
+
+  logger.info(`[Detail] 获取菜谱详情: ${dishName}`);
+
+  // 2. 先检查缓存中是否已有完整详情
+  if (!isMockMode) {
+    try {
+      const cache = await RecommendationCache.findByIngredients(ingredientNames);
+      if (cache && cache.recipesJson) {
+        const cached = cache.recipesJson.find(r => r.dishName === dishName);
+        if (cached && cached.ingredients && cached.ingredients.length > 0) {
+          logger.info(`[Detail] 从缓存获取 ${dishName} 详情`);
+          return await processRecipeForResponse(cached, ingredientNames);
+        }
+      }
+    } catch (err) {
+      logger.warn('[Detail] 查询缓存失败:', err.message);
+    }
+  }
+
+  // 3. 调用 AI 获取详情
+  try {
+    const detail = await getAIRecipeDetail(dishName, ingredientNames);
+    const recipe = {
+      ...detail,
+      normalizedDishName: normalizeDishName(detail.dishName || dishName),
+      score,
+      recipeHash: generateRecipeHash(normalizeDishName(detail.dishName || dishName), ingredientNames)
+    };
+
+    const processedRecipe = await processRecipeForResponse(recipe, ingredientNames);
+
+    // 4. 更新缓存
+    if (!isMockMode) {
+      try {
+        const cache = await RecommendationCache.findByIngredients(ingredientNames);
+        if (cache && cache.recipesJson) {
+          const recipes = cache.recipesJson;
+          const index = recipes.findIndex(r => r.dishName === dishName);
+          if (index >= 0) {
+            recipes[index] = processedRecipe;
+          } else {
+            recipes.push(processedRecipe);
+          }
+          await RecommendationCache.upsertCache(ingredientNames, recipes, 7);
+          logger.info(`[Detail] 已更新缓存: ${dishName}`);
+        }
+      } catch (err) {
+        logger.warn('[Detail] 更新缓存失败:', err.message);
+      }
+    }
+
+    return processedRecipe;
+  } catch (err) {
+    logger.error(`[Detail] 获取 ${dishName} 详情失败:`, err.message);
+    // 返回基础信息
+    return {
+      id: getNextMockId(),
+      dishName,
+      normalizedDishName: normalizeDishName(dishName),
+      ingredients: [],
+      steps: ['暂无详细步骤'],
+      cookingTime: 20,
+      difficulty: 'medium',
+      cuisineType: '家常菜',
+      tips: '',
+      score,
+      imageUrl: '',
+      imageId: null,
+      imagePending: false
+    };
+  }
+}
+
+/**
+ * 处理菜谱数据用于响应
+ */
+async function processRecipeForResponse(aiRecipe, ingredientNames) {
+  const normalizedName = aiRecipe.normalizedDishName || normalizeDishName(aiRecipe.dishName);
+  let recipe;
+  let imageInfo = { imageUrl: '', imageId: null, isPending: false };
+
+  if (isMockMode) {
+    recipe = recipeStore.get(normalizedName);
+    if (!recipe) {
+      recipe = {
+        id: getNextMockId(),
+        dishName: aiRecipe.dishName,
+        normalizedDishName: normalizedName,
+        ingredientsJson: aiRecipe.ingredients,
+        stepsJson: aiRecipe.steps,
+        cookingTime: aiRecipe.cookingTime,
+        difficulty: aiRecipe.difficulty || 'medium',
+        cuisineType: aiRecipe.cuisineType,
+        tips: aiRecipe.tips,
+        score: aiRecipe.score || 5
+      };
+      recipeStore.set(normalizedName, recipe);
+    }
+  } else {
+    try {
+      recipe = await Recipe.findByDishName(normalizedName);
+
+      if (!recipe) {
+        recipe = await Recipe.create({
+          dishName: aiRecipe.dishName,
+          normalizedDishName: normalizedName,
+          ingredientsJson: aiRecipe.ingredients,
+          mainIngredientsJson: aiRecipe.mainIngredients || null,
+          seasoningsJson: aiRecipe.seasonings || null,
+          stepsJson: aiRecipe.steps,
+          cookingTime: aiRecipe.cookingTime,
+          difficulty: aiRecipe.difficulty || 'medium',
+          cuisineType: aiRecipe.cuisineType,
+          tips: aiRecipe.tips
+        });
+      }
+
+      // 触发图片生成
+      const recipeHash = aiRecipe.recipeHash || generateRecipeHash(normalizedName, ingredientNames);
+      imageInfo = await getOrGenerateImage(normalizedName, recipeHash);
+
+      if (imageInfo.imageId && !recipe.imageLibraryId) {
+        await Recipe.linkImage(recipe.id, imageInfo.imageId);
+      }
+    } catch (dbError) {
+      logger.error('数据库操作失败:', dbError);
+      recipe = {
+        id: getNextMockId(),
+        dishName: aiRecipe.dishName,
+        normalizedDishName: normalizedName,
+        ingredientsJson: aiRecipe.ingredients,
+        mainIngredientsJson: aiRecipe.mainIngredients || null,
+        seasoningsJson: aiRecipe.seasonings || null,
+        stepsJson: aiRecipe.steps,
+        cookingTime: aiRecipe.cookingTime,
+        difficulty: aiRecipe.difficulty || 'medium',
+        cuisineType: aiRecipe.cuisineType,
+        tips: aiRecipe.tips,
+        score: aiRecipe.score || 5
+      };
+      recipeStore.set(normalizedName, recipe);
+    }
+  }
+
+  return {
+    id: recipe.id,
+    dishName: recipe.dishName || aiRecipe.dishName,
+    normalizedDishName: recipe.normalizedDishName || normalizedName,
+    ingredients: recipe.ingredientsJson || aiRecipe.ingredients,
+    mainIngredients: recipe.mainIngredientsJson || aiRecipe.mainIngredients || null,
+    seasonings: recipe.seasoningsJson || aiRecipe.seasonings || null,
+    steps: recipe.stepsJson || aiRecipe.steps,
+    cookingTime: recipe.cookingTime || aiRecipe.cookingTime,
+    difficulty: recipe.difficulty || aiRecipe.difficulty,
+    cuisineType: recipe.cuisineType || aiRecipe.cuisineType,
+    tips: recipe.tips || aiRecipe.tips,
+    score: aiRecipe.score || 5,
+    imageUrl: imageInfo.imageUrl,
+    imageId: imageInfo.imageId,
+    imagePending: imageInfo.isPending
+  };
+}
+
 module.exports = {
   getRecommendations,
   refreshRecommendations,
+  getRecipeNames: getRecipeNamesForUser,
+  getSingleRecipeDetail,
   getRecipeDetail,
   checkImageStatus,
   batchCheckImageStatus

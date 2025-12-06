@@ -28,9 +28,31 @@ const Recipe = sequelize.define('Recipe', {
     type: DataTypes.JSON,
     allowNull: false,
     field: 'ingredients_json',
-    comment: '食材列表JSON',
+    comment: '食材列表JSON（兼容旧数据，包含所有食材）',
     get() {
       const raw = this.getDataValue('ingredientsJson');
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+  },
+  mainIngredientsJson: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: 'main_ingredients_json',
+    comment: '主食材列表JSON（用于搜索匹配）',
+    get() {
+      const raw = this.getDataValue('mainIngredientsJson');
+      if (!raw) return null;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+  },
+  seasoningsJson: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: 'seasonings_json',
+    comment: '配料/佐料列表JSON',
+    get() {
+      const raw = this.getDataValue('seasoningsJson');
+      if (!raw) return null;
       return typeof raw === 'string' ? JSON.parse(raw) : raw;
     }
   },
@@ -107,27 +129,50 @@ Recipe.findByDishName = async function(dishName) {
 
 /**
  * 根据食材列表查询可能的菜谱
- * @param {string[]} ingredients - 食材名称列表
+ * 只匹配【主食材】，忽略配料/佐料
+ * 要求：菜谱的主食材必须【包含用户的所有食材】（精确匹配）
+ * 即：用户选择的每个食材都必须出现在菜谱的主食材中
+ * @param {string[]} ingredients - 用户食材名称列表
  * @param {number} limit - 返回数量限制
  * @returns {Promise<Recipe[]>}
  */
 Recipe.findByIngredients = async function(ingredients, limit = 10) {
-  // 使用JSON_CONTAINS查询包含指定食材的菜谱
-  // 注意：这是一个简化实现，实际可能需要更复杂的匹配逻辑
+  // 获取所有菜谱
   const recipes = await this.findAll({
-    limit,
     order: [['created_at', 'DESC']]
   });
 
-  // 过滤包含至少一个指定食材的菜谱
-  return recipes.filter(recipe => {
-    const recipeIngredients = recipe.ingredientsJson.map(i =>
-      (i.name || i).toLowerCase()
+  // 用户食材列表（小写，去空格）
+  const userIngredients = ingredients.map(i => i.toLowerCase().trim());
+
+  // 过滤：菜谱的主食材必须【包含用户的所有食材】
+  const matched = recipes.filter(recipe => {
+    // 优先使用 mainIngredientsJson，如果没有则从 ingredientsJson 中筛选 isMain=true 的
+    let mainIngredients = recipe.mainIngredientsJson;
+
+    if (!mainIngredients || mainIngredients.length === 0) {
+      // 兼容旧数据：从 ingredientsJson 中筛选主食材
+      const allIngredients = recipe.ingredientsJson || [];
+      mainIngredients = allIngredients.filter(i => i.isMain === true);
+
+      // 如果没有标记 isMain，则认为所有都是主食材（旧数据兼容）
+      if (mainIngredients.length === 0) {
+        mainIngredients = allIngredients;
+      }
+    }
+
+    const recipeMainIngredients = mainIngredients.map(i =>
+      (i.name || i).toLowerCase().trim()
     );
-    return ingredients.some(ing =>
-      recipeIngredients.some(ri => ri.includes(ing.toLowerCase()))
+
+    // 用户的【每一个食材】都必须在菜谱的主食材中找到【精确匹配】
+    // 即：菜谱主食材必须包含用户的所有食材
+    return userIngredients.every(userIng =>
+      recipeMainIngredients.some(recipeIng => recipeIng === userIng)
     );
   });
+
+  return matched.slice(0, limit);
 };
 
 /**
@@ -141,6 +186,8 @@ Recipe.createFromAI = async function(aiResponse, normalizedDishName) {
     dishName: aiResponse.dishName || aiResponse.dish_name,
     normalizedDishName,
     ingredientsJson: aiResponse.ingredients,
+    mainIngredientsJson: aiResponse.mainIngredients || null,
+    seasoningsJson: aiResponse.seasonings || null,
     stepsJson: aiResponse.steps,
     cookingTime: aiResponse.cookingTime || aiResponse.cooking_time,
     difficulty: aiResponse.difficulty || 'medium',

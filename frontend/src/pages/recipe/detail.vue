@@ -8,18 +8,8 @@
 
     <!-- 菜谱详情 -->
     <view v-else-if="recipe" class="recipe-detail">
-      <!-- 顶部图片 -->
-      <view class="header-image">
-        <image
-          v-if="recipe.imageUrl"
-          :src="recipe.imageUrl"
-          mode="aspectFill"
-          class="dish-image"
-        />
-        <view v-else class="image-placeholder">
-          <text class="placeholder-text">{{ recipe.dishName?.charAt(0) }}</text>
-        </view>
-
+      <!-- 固定顶部按钮 -->
+      <view class="fixed-buttons">
         <!-- 返回按钮 -->
         <view class="back-button" @click="goBack">
           <text class="back-icon">←</text>
@@ -32,6 +22,19 @@
           @click="toggleFavorite"
         >
           <text class="favorite-icon">{{ recipe.isFavorited ? '❤️' : '🤍' }}</text>
+        </view>
+      </view>
+
+      <!-- 顶部图片 -->
+      <view class="header-image">
+        <image
+          v-if="recipe.imageUrl"
+          :src="recipe.imageUrl"
+          mode="aspectFill"
+          class="dish-image"
+        />
+        <view v-else class="image-placeholder">
+          <text class="placeholder-text">{{ recipe.dishName?.charAt(0) }}</text>
         </view>
       </view>
 
@@ -57,14 +60,29 @@
         </view>
       </view>
 
-      <!-- 食材清单 -->
+      <!-- 主食材 -->
       <view class="section">
-        <text class="section-title">食材清单</text>
+        <text class="section-title">主食材</text>
         <view class="ingredient-list">
           <view
-            v-for="(ing, index) in recipe.ingredients"
-            :key="index"
-            class="ingredient-item"
+            v-for="(ing, index) in mainIngredientsList"
+            :key="'main-' + index"
+            class="ingredient-item main-ingredient"
+          >
+            <text class="ing-name">{{ ing.name || ing }}</text>
+            <text class="ing-amount">{{ ing.amount || '适量' }}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 配料/佐料 -->
+      <view v-if="seasoningsList.length > 0" class="section">
+        <text class="section-title">配料/佐料</text>
+        <view class="ingredient-list">
+          <view
+            v-for="(ing, index) in seasoningsList"
+            :key="'seasoning-' + index"
+            class="ingredient-item seasoning"
           >
             <text class="ing-name">{{ ing.name || ing }}</text>
             <text class="ing-amount">{{ ing.amount || '适量' }}</text>
@@ -117,6 +135,45 @@ const userStore = useUserStore();
 const loading = ref(true);
 const recipe = ref(null);
 const recipeId = ref(null);
+
+// 计算主食材列表
+const mainIngredientsList = computed(() => {
+  if (!recipe.value) return [];
+
+  // 优先使用 mainIngredients 字段
+  if (recipe.value.mainIngredients && recipe.value.mainIngredients.length > 0) {
+    return recipe.value.mainIngredients;
+  }
+
+  // 兼容旧数据：从 ingredients 中筛选 isMain=true 的
+  if (recipe.value.ingredients && recipe.value.ingredients.length > 0) {
+    const mainOnes = recipe.value.ingredients.filter(i => i.isMain === true);
+    // 如果没有标记 isMain，返回全部（旧数据兼容）
+    if (mainOnes.length === 0) {
+      return recipe.value.ingredients;
+    }
+    return mainOnes;
+  }
+
+  return [];
+});
+
+// 计算配料列表
+const seasoningsList = computed(() => {
+  if (!recipe.value) return [];
+
+  // 优先使用 seasonings 字段
+  if (recipe.value.seasonings && recipe.value.seasonings.length > 0) {
+    return recipe.value.seasonings;
+  }
+
+  // 兼容旧数据：从 ingredients 中筛选 isMain=false 的
+  if (recipe.value.ingredients && recipe.value.ingredients.length > 0) {
+    return recipe.value.ingredients.filter(i => i.isMain === false);
+  }
+
+  return [];
+});
 
 // 难度文本映射
 const difficultyText = (difficulty) => {
@@ -208,8 +265,10 @@ const toggleFavorite = async () => {
 
 <style lang="scss" scoped>
 .page-container {
-  min-height: 100vh;
+  height: 100vh;
   background: #f5f7fa;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .loading-container {
@@ -239,6 +298,22 @@ const toggleFavorite = async () => {
   padding-bottom: 64rpx;
 }
 
+.fixed-buttons {
+  position: fixed;
+  top: 80rpx;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 24rpx;
+  pointer-events: none;
+
+  > view {
+    pointer-events: auto;
+  }
+}
+
 .header-image {
   position: relative;
   width: 100%;
@@ -266,12 +341,9 @@ const toggleFavorite = async () => {
 }
 
 .back-button {
-  position: absolute;
-  top: 80rpx;
-  left: 24rpx;
   width: 72rpx;
   height: 72rpx;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.5);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -284,9 +356,6 @@ const toggleFavorite = async () => {
 }
 
 .favorite-button {
-  position: absolute;
-  top: 80rpx;
-  right: 24rpx;
   width: 72rpx;
   height: 72rpx;
   background: rgba(255, 255, 255, 0.9);
@@ -379,6 +448,22 @@ const toggleFavorite = async () => {
 
   &:last-child {
     border-bottom: none;
+  }
+
+  &.main-ingredient {
+    .ing-name {
+      font-weight: 500;
+      color: #333;
+    }
+  }
+
+  &.seasoning {
+    .ing-name {
+      color: #666;
+    }
+    .ing-amount {
+      color: #aaa;
+    }
   }
 }
 
