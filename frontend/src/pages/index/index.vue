@@ -68,12 +68,11 @@
       :loading="recipeStore.loading"
       :ingredient-names="ingredientStore.ingredientNames"
       :show-back="true"
-      :show-refresh="true"
+      :show-refresh="false"
       loading-text="AI正在为您推荐菜谱..."
       empty-text="未能获取推荐"
       :empty-hint="recipeStore.error || '请返回添加食材后重试'"
       @back="handleBackToInput"
-      @refresh="handleRefreshRecipes"
       @retry="loadRecommendations"
       @recipe-click="viewRecipeDetail"
     />
@@ -273,29 +272,12 @@ const handleDiscoverRecipes = async () => {
   startImagePolling();
 };
 
-// 加载推荐
+// 加载推荐（分步：先菜名，再逐个加载详情）
 const loadRecommendations = async () => {
-  const result = await recipeStore.getRecommendations();
+  const result = await recipeStore.getRecommendationsStepByStep();
   if (!result.success) {
     uni.showToast({
       title: result.message || '获取推荐失败',
-      icon: 'none'
-    });
-  }
-};
-
-// 换一批
-const handleRefreshRecipes = async () => {
-  const result = await recipeStore.refreshRecommendations();
-  if (result.success) {
-    uni.showToast({
-      title: '已为您换一批推荐',
-      icon: 'success'
-    });
-    startImagePolling();
-  } else {
-    uni.showToast({
-      title: result.message || '刷新失败',
       icon: 'none'
     });
   }

@@ -54,21 +54,15 @@
             class="thumb-image"
           />
           <view v-else class="thumb-placeholder">
-            <view v-if="recipe.imagePending" class="mini-spinner"></view>
-            <text v-else class="thumb-text">{{ recipe.dishName.charAt(0) }}</text>
+            <text class="thumb-text">{{ recipe.dishName.charAt(0) }}</text>
           </view>
         </view>
 
         <!-- 信息区域 -->
         <view class="row-info">
-          <view class="row-title-line">
-            <text class="row-dish-name">{{ recipe.dishName }}</text>
-            <view v-if="recipe.score" class="score-badge">
-              <text class="score-value">{{ recipe.score }}</text>
-              <text class="score-label">分</text>
-            </view>
-          </view>
-          <text class="row-ingredients">{{ formatIngredients(recipe.ingredients) }}</text>
+          <text class="row-dish-name">{{ recipe.dishName }}</text>
+          <text v-if="recipe.detailLoading" class="row-ingredients loading-hint">正在加载详情...</text>
+          <text v-else class="row-ingredients">{{ formatIngredients(recipe.ingredients) }}</text>
         </view>
 
         <!-- 箭头 -->
@@ -400,6 +394,11 @@ const handleRecipeClick = (recipe) => emit('recipe-click', recipe);
   text-overflow: ellipsis;
   white-space: nowrap;
   margin-top: 8rpx;
+
+  &.loading-hint {
+    color: #4CAF50;
+    font-style: italic;
+  }
 }
 
 .row-arrow {

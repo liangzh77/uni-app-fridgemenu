@@ -3,7 +3,7 @@
  */
 const express = require('express');
 const router = express.Router();
-const { getRecommendations, refreshRecommendations, checkImageStatus, batchCheckImageStatus } = require('../../services/recipeService');
+const { getRecommendations, refreshRecommendations, getRecipeNames, getSingleRecipeDetail, checkImageStatus, batchCheckImageStatus } = require('../../services/recipeService');
 const { aiLimiter } = require('../middleware/rateLimit');
 const logger = require('../../config/logger');
 
@@ -86,6 +86,69 @@ router.post('/refresh', aiLimiter, async (req, res, next) => {
         isLooping: result.isLooping
       },
       message: result.isLooping ? `已循环推荐 ${result.recipes.length} 道菜谱` : `已推荐 ${result.recipes.length} 道新菜谱`
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/recommend/names
+ * 第一步：获取菜名列表（快速返回）
+ */
+router.post('/names', aiLimiter, async (req, res, next) => {
+  try {
+    const { userId, sessionId } = req.body;
+
+    if (!userId || !sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少必要参数: userId, sessionId'
+      });
+    }
+
+    const result = await getRecipeNames(userId, sessionId);
+
+    logger.info(`用户 ${userId} 获取菜名列表: ${result.names.map(n => n.dishName).join('、')}`);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `已推荐 ${result.names.length} 道菜谱`
+    });
+  } catch (error) {
+    if (error.message === '请先添加食材') {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+    next(error);
+  }
+});
+
+/**
+ * POST /api/recommend/detail
+ * 第二步：获取单个菜谱详情
+ */
+router.post('/detail', aiLimiter, async (req, res, next) => {
+  try {
+    const { userId, sessionId, dishName, score } = req.body;
+
+    if (!userId || !sessionId || !dishName) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少必要参数: userId, sessionId, dishName'
+      });
+    }
+
+    const recipe = await getSingleRecipeDetail(userId, sessionId, dishName, score);
+
+    logger.info(`用户 ${userId} 获取菜谱详情: ${dishName}`);
+
+    res.json({
+      success: true,
+      data: recipe
     });
   } catch (error) {
     next(error);
