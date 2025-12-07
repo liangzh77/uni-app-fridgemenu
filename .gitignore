@@ -45,6 +45,15 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Playwright tests
+test-results/
+playwright-report/
+playwright.config.js
+
+# Root package files (used for tooling only)
+/package.json
+/package-lock.json
+
 # TypeScript
 *.tsbuildinfo
 
